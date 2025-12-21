@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # HashiCorp Consul - Service Discovery & KV Store
+  consul:
+    image: hashicorp/consul:latest
+    container_name: consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0 -bind=0.0.0.0
+    volumes:
+      - consul-data:/consul/data
+    networks:
+      - trading-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana Loki - Log Aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # Grafana - Visualization & Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # Trading Service - Worker (Daily Scanner)
+  trading-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.TradingService
+    container_name: trading-service
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+      - AppSettings__Consul__Host=http://consul:8500
+      - AppSettings__Database__ConnectionString=Data Source=/app/data/trading.db
+      - Loki__Endpoint=http://loki:3100
+    depends_on:
+      consul:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    volumes:
+      - trading-data:/app/data
+      - trading-service-logs:/app/logs
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # Trading API - REST API + Gateway
+  trading-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.Api
+    container_name: trading-api
+    ports:
+      - "5001:5001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5001
+      - AppSettings__Consul__Host=http://consul:8500
+      - AppSettings__Consul__ServiceName=TradingApi
+      - AppSettings__Consul__ServicePort=5001
+      - AppSettings__Database__ConnectionString=Data Source=/app/data/trading.db
+      - Loki__Endpoint=http://loki:3100
+    depends_on:
+      consul:
+        condition: service_healthy
+      trading-service:
+        condition: service_started
+      loki:
+        condition: service_started
+    volumes:
+      - trading-data:/app/data
+      - trading-api-logs:/app/logs
+    networks:
+      - trading-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Frontend - Vue.js Dashboard
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.Frontend
+    container_name: trading-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      trading-api:
+        condition: service_healthy
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+volumes:
+  consul-data:
+    driver: local
+  loki-data:
+    driver: local
+  grafana-data:
+    driver: local
+  trading-data:
+    driver: local
+  trading-service-logs:
+    driver: local
+  trading-api-logs:
+    driver: local
+
+networks:
+  trading-network:
+    driver: bridge

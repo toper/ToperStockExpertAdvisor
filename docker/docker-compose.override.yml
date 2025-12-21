@@ -1,0 +1,27 @@
+# Development overrides
+version: '3.8'
+
+services:
+  trading-service:
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - AppSettings__ScanTime=09:30
+      - AppSettings__Strategy__MinConfidence=0.5
+    volumes:
+      - ../src/TradingService/appsettings.Development.json:/app/appsettings.Development.json:ro
+
+  trading-api:
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    volumes:
+      - ../src/TradingService.Api/appsettings.Development.json:/app/appsettings.Development.json:ro
+    ports:
+      - "5001:5001"
+
+  frontend:
+    # For development, use vite dev server instead
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.Frontend
+    ports:
+      - "3000:80"

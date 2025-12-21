@@ -1,0 +1,44 @@
+# Multi-stage build for TradingService (Worker Service)
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy solution and project files
+COPY ["ToperStockExpertAdvisor.sln", "./"]
+COPY ["src/TradingService/TradingService.csproj", "src/TradingService/"]
+COPY ["src/Shared/Shared.csproj", "src/Shared/"]
+
+# Restore dependencies
+RUN dotnet restore "src/TradingService/TradingService.csproj"
+
+# Copy source code
+COPY src/ src/
+
+# Build and publish
+WORKDIR /src/src/TradingService
+RUN dotnet publish -c Release -o /app/publish --no-restore
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+WORKDIR /app
+
+# Create non-root user for security
+RUN groupadd -r tradingservice && useradd -r -g tradingservice tradingservice
+
+# Copy published application
+COPY --from=build /app/publish .
+
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R tradingservice:tradingservice /app
+
+# Switch to non-root user
+USER tradingservice
+
+# Environment variables
+ENV DOTNET_ENVIRONMENT=Production
+ENV AppSettings__Consul__Host=http://consul:8500
+ENV AppSettings__Database__ConnectionString="Data Source=/app/data/trading.db"
+
+# Volume for persistent data
+VOLUME ["/app/data", "/app/logs"]
+
+ENTRYPOINT ["dotnet", "TradingService.dll"]

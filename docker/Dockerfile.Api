@@ -1,0 +1,55 @@
+# Multi-stage build for TradingService.Api (REST API + Ocelot Gateway)
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy solution and project files
+COPY ["ToperStockExpertAdvisor.sln", "./"]
+COPY ["src/TradingService.Api/TradingService.Api.csproj", "src/TradingService.Api/"]
+COPY ["src/TradingService/TradingService.csproj", "src/TradingService/"]
+COPY ["src/Shared/Shared.csproj", "src/Shared/"]
+
+# Restore dependencies
+RUN dotnet restore "src/TradingService.Api/TradingService.Api.csproj"
+
+# Copy source code
+COPY src/ src/
+
+# Build and publish
+WORKDIR /src/src/TradingService.Api
+RUN dotnet publish -c Release -o /app/publish --no-restore
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+# Create non-root user for security
+RUN groupadd -r tradingapi && useradd -r -g tradingapi tradingapi
+
+# Copy published application
+COPY --from=build /app/publish .
+
+# Create logs directory
+RUN mkdir -p /app/logs && chown -R tradingapi:tradingapi /app
+
+# Switch to non-root user
+USER tradingapi
+
+# Environment variables
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_URLS=http://+:5001
+ENV AppSettings__Consul__Host=http://consul:8500
+ENV AppSettings__Consul__ServiceName=TradingApi
+ENV AppSettings__Consul__ServicePort=5001
+ENV AppSettings__Database__ConnectionString="Data Source=/app/data/trading.db"
+
+# Expose API port
+EXPOSE 5001
+
+# Volume for persistent data
+VOLUME ["/app/data", "/app/logs"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5001/api/health || exit 1
+
+ENTRYPOINT ["dotnet", "TradingService.Api.dll"]
