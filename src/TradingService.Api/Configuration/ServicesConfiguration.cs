@@ -55,5 +55,14 @@ public static class ServicesConfiguration
 
         // Consul Registration (runs on startup/shutdown)
         builder.Services.AddHostedService<ConsulRegistrationService>();
+
+        // Health Checks
+        builder.Services.AddHealthChecks()
+            .AddSqlite(
+                connectionString,
+                name: "database",
+                failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+                tags: new[] { "db", "sqlite" })
+            .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "api" });
     }
 }

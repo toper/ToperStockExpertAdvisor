@@ -6,7 +6,6 @@ WORKDIR /src
 COPY ["ToperStockExpertAdvisor.sln", "./"]
 COPY ["src/TradingService.Api/TradingService.Api.csproj", "src/TradingService.Api/"]
 COPY ["src/TradingService/TradingService.csproj", "src/TradingService/"]
-COPY ["src/Shared/Shared.csproj", "src/Shared/"]
 
 # Restore dependencies
 RUN dotnet restore "src/TradingService.Api/TradingService.Api.csproj"
@@ -50,6 +49,6 @@ VOLUME ["/app/data", "/app/logs"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:5001/api/health || exit 1
+    CMD curl -f http://localhost:5001/health || exit 1
 
 ENTRYPOINT ["dotnet", "TradingService.Api.dll"]

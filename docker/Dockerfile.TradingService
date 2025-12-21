@@ -5,7 +5,6 @@ WORKDIR /src
 # Copy solution and project files
 COPY ["ToperStockExpertAdvisor.sln", "./"]
 COPY ["src/TradingService/TradingService.csproj", "src/TradingService/"]
-COPY ["src/Shared/Shared.csproj", "src/Shared/"]
 
 # Restore dependencies
 RUN dotnet restore "src/TradingService/TradingService.csproj"

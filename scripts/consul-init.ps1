@@ -17,17 +17,42 @@ $tradingConfig = @{
         MaxExpiryDays = 21
         MinConfidence = 0.6
     }
+    Consul = @{
+        Host = "http://localhost:8500"
+        ServiceName = "TradingService"
+        ServicePort = 5000
+    }
     Database = @{
         ConnectionString = "Data Source=trading.db"
     }
 } | ConvertTo-Json -Depth 3
 
 try {
-    Invoke-RestMethod -Uri "$ConsulHost/v1/kv/TradingService/config" -Method PUT -Body $tradingConfig -ContentType "application/json"
+    Invoke-RestMethod -Uri "$ConsulHost/v1/kv/config/TradingService/appsettings" -Method PUT -Body $tradingConfig -ContentType "application/json"
     Write-Host "[OK] Trading Service config stored" -ForegroundColor Green
 }
 catch {
     Write-Host "[ERROR] Failed to store Trading Service config: $_" -ForegroundColor Red
+}
+
+# Trading API Configuration
+$apiConfig = @{
+    Consul = @{
+        Host = "http://localhost:8500"
+        ServiceName = "TradingApi"
+        ServicePort = 5001
+    }
+    Database = @{
+        ConnectionString = "Data Source=trading.db"
+    }
+} | ConvertTo-Json -Depth 3
+
+try {
+    Invoke-RestMethod -Uri "$ConsulHost/v1/kv/config/TradingApi/appsettings" -Method PUT -Body $apiConfig -ContentType "application/json"
+    Write-Host "[OK] Trading API config stored" -ForegroundColor Green
+}
+catch {
+    Write-Host "[ERROR] Failed to store Trading API config: $_" -ForegroundColor Red
 }
 
 # Broker Configuration (Exante)

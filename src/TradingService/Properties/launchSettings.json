@@ -1,9 +1,19 @@
 ﻿{
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "TradingService": {
+    "Development": {
       "commandName": "Project",
       "dotnetRunMessages": true,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "AppSettings__Consul__Host": "http://localhost:8500",
+        "AppSettings__Database__ConnectionString": "Data Source=trading.db",
+        "AppSettings__ScanTime": "04:00",
+        "AppSettings__Broker__DefaultBroker": "Exante"
+      }
+    },
+    "Docker": {
+      "commandName": "Docker",
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development"
       }

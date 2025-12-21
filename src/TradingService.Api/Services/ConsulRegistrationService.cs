@@ -41,7 +41,7 @@ public class ConsulRegistrationService : IHostedService
             Tags = ["api", "trading", "v1"],
             Check = new AgentServiceCheck
             {
-                HTTP = $"http://localhost:{_consulSettings.ServicePort}/api/health",
+                HTTP = $"http://localhost:{_consulSettings.ServicePort}/health",
                 Interval = TimeSpan.FromSeconds(30),
                 Timeout = TimeSpan.FromSeconds(5),
                 DeregisterCriticalServiceAfter = TimeSpan.FromMinutes(5)

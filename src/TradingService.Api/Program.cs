@@ -15,6 +15,9 @@ try
     // NLog
     builder.AddNlog();
 
+    // Ocelot Gateway
+    builder.AddOcelotGateway();
+
     // Swagger
     builder.AddSwagger();
 
@@ -43,6 +46,14 @@ try
 
     // Map controllers
     app.MapControllers();
+
+    // Map health checks
+    app.MapHealthChecks("/health");
+    app.MapHealthChecks("/health/ready");
+    app.MapHealthChecks("/health/live");
+
+    // Use Ocelot middleware
+    await app.UseOcelotGateway();
 
     logger.Info("Starting TradingService.Api...");
     await app.RunAsync();
