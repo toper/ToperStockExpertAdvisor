@@ -505,10 +505,10 @@ public partial class ExanteOptionsDiscoveryService : IOptionsDiscoveryService
                     }
                     return null;
                 })
-                .Where(ticker => !string.IsNullOrEmpty(ticker))
+                .OfType<string>() // Filters out nulls and converts to non-nullable
                 .Distinct()
                 .OrderBy(ticker => ticker)
-                .ToList()!;
+                .ToList();
 
             _logger.LogInformation(
                 "Found {Count} unique underlying symbols with options on {Exchanges}",
