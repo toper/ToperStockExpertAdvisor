@@ -366,7 +366,12 @@ FodyWeavers.xsd
 # Environment variables
 .env
 
+# Docker persistent data and logs
+/data/
+/logs/
+
 # macOS
 .DS_Store
 /.claude
 /nul
+/PLAN.md

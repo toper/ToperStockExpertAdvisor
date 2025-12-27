@@ -2,6 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Copy NuGet configuration
+COPY ["NuGet.Config", "./"]
+
 # Copy solution and project files
 COPY ["ToperStockExpertAdvisor.sln", "./"]
 COPY ["src/TradingService/TradingService.csproj", "src/TradingService/"]
@@ -14,10 +17,10 @@ COPY src/ src/
 
 # Build and publish
 WORKDIR /src/src/TradingService
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -o /app/publish
 
 # Runtime image
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # Create non-root user for security
@@ -26,8 +29,8 @@ RUN groupadd -r tradingservice && useradd -r -g tradingservice tradingservice
 # Copy published application
 COPY --from=build /app/publish .
 
-# Create logs directory
-RUN mkdir -p /app/logs && chown -R tradingservice:tradingservice /app
+# Create data and logs directories with proper permissions
+RUN mkdir -p /app/data /app/logs && chown -R tradingservice:tradingservice /app
 
 # Switch to non-root user
 USER tradingservice

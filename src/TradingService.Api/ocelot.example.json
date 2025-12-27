@@ -1,0 +1,60 @@
+{
+  "_documentation": {
+    "description": "Ocelot API Gateway Configuration - Single Port Architecture",
+    "architecture": "All traffic on port 5001. Ocelot handles /gateway/* routes to external microservices. Local routes (/api/*, /health, /swagger) pass through to MapControllers.",
+    "routing": [
+      "/api/* -> local controllers (NOT in Ocelot, passes through)",
+      "/health/* -> local health checks (NOT in Ocelot, passes through)",
+      "/swagger/* -> local Swagger UI (NOT in Ocelot, passes through)",
+      "/gateway/payments/* -> PaymentService via Consul (Ocelot route)",
+      "/gateway/notifications/* -> NotificationService via Consul (Ocelot route)"
+    ]
+  },
+  "Routes": [
+    {
+      "_comment": "EXAMPLE: PaymentService via Consul service discovery",
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "UpstreamPathTemplate": "/gateway/payments/{everything}",
+      "UpstreamHttpMethod": [ "Get", "Post", "Put", "Delete" ],
+      "ServiceName": "PaymentService",
+      "UseServiceDiscovery": true,
+      "LoadBalancerOptions": {
+        "Type": "RoundRobin"
+      }
+    },
+    {
+      "_comment": "EXAMPLE: NotificationService via Consul service discovery",
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "UpstreamPathTemplate": "/gateway/notifications/{everything}",
+      "UpstreamHttpMethod": [ "Get", "Post" ],
+      "ServiceName": "NotificationService",
+      "UseServiceDiscovery": true,
+      "LoadBalancerOptions": {
+        "Type": "RoundRobin"
+      }
+    },
+    {
+      "_comment": "EXAMPLE: Direct host routing (without Consul)",
+      "DownstreamPathTemplate": "/api/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "analytics-service",
+          "Port": 80
+        }
+      ],
+      "UpstreamPathTemplate": "/gateway/analytics/{everything}",
+      "UpstreamHttpMethod": [ "Get" ]
+    }
+  ],
+  "GlobalConfiguration": {
+    "BaseUrl": "http://trading-api:5001",
+    "ServiceDiscoveryProvider": {
+      "Host": "consul",
+      "Port": 8500,
+      "Type": "Consul"
+    }
+  }
+}

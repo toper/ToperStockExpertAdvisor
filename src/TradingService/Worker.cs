@@ -9,6 +9,7 @@ public class Worker : BackgroundService
     private readonly ILogger<Worker> _logger;
     private readonly IServiceProvider _services;
     private readonly AppSettings _settings;
+    private bool _firstScanExecuted = false;
 
     public Worker(
         ILogger<Worker> logger,
@@ -25,6 +26,14 @@ public class Worker : BackgroundService
         _logger.LogInformation("TradingService Worker started at: {Time}", DateTimeOffset.Now);
         _logger.LogInformation("Configured scan time: {ScanTime}", _settings.ScanTime);
         _logger.LogInformation("Watchlist: {Watchlist}", string.Join(", ", _settings.Watchlist));
+
+        // Execute first scan immediately on startup
+        if (!_firstScanExecuted)
+        {
+            _logger.LogInformation("Executing IMMEDIATE first scan on startup...");
+            await ExecuteDailyScanAsync(stoppingToken);
+            _firstScanExecuted = true;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

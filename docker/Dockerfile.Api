@@ -2,6 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Copy NuGet configuration
+COPY ["NuGet.Config", "./"]
+
 # Copy solution and project files
 COPY ["ToperStockExpertAdvisor.sln", "./"]
 COPY ["src/TradingService.Api/TradingService.Api.csproj", "src/TradingService.Api/"]
@@ -13,13 +16,20 @@ RUN dotnet restore "src/TradingService.Api/TradingService.Api.csproj"
 # Copy source code
 COPY src/ src/
 
+# Remove duplicate config files from TradingService before publish
+WORKDIR /src/src/TradingService
+RUN rm -f appsettings*.json nlog.config
+
 # Build and publish
 WORKDIR /src/src/TradingService.Api
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -o /app/publish
 
 # Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN groupadd -r tradingapi && useradd -r -g tradingapi tradingapi
@@ -27,8 +37,8 @@ RUN groupadd -r tradingapi && useradd -r -g tradingapi tradingapi
 # Copy published application
 COPY --from=build /app/publish .
 
-# Create logs directory
-RUN mkdir -p /app/logs && chown -R tradingapi:tradingapi /app
+# Create data and logs directories with proper permissions
+RUN mkdir -p /app/data /app/logs && chown -R tradingapi:tradingapi /app
 
 # Switch to non-root user
 USER tradingapi

@@ -19,6 +19,7 @@ public class DailyScanService : IDailyScanService
     private readonly IDbContextFactory _dbContextFactory;
     private readonly ILogger<DailyScanService> _logger;
     private readonly AppSettings _appSettings;
+    private readonly IOptionsDiscoveryService? _optionsDiscoveryService;
 
     public DailyScanService(
         IMarketDataAggregator marketDataAggregator,
@@ -26,7 +27,8 @@ public class DailyScanService : IDailyScanService
         IRecommendationRepository recommendationRepository,
         IDbContextFactory dbContextFactory,
         ILogger<DailyScanService> logger,
-        IOptions<AppSettings> appSettings)
+        IOptions<AppSettings> appSettings,
+        IOptionsDiscoveryService? optionsDiscoveryService = null)
     {
         _marketDataAggregator = marketDataAggregator;
         _strategyLoader = strategyLoader;
@@ -34,6 +36,7 @@ public class DailyScanService : IDailyScanService
         _dbContextFactory = dbContextFactory;
         _logger = logger;
         _appSettings = appSettings.Value;
+        _optionsDiscoveryService = optionsDiscoveryService;
     }
 
     public async Task ExecuteScanAsync(CancellationToken cancellationToken)
@@ -63,7 +66,7 @@ public class DailyScanService : IDailyScanService
             _logger.LogInformation("Loaded {Count} strategies for scanning", strategies.Count);
 
             // Get symbols to scan
-            var symbols = await GetSymbolsToScanAsync();
+            var symbols = await GetSymbolsToScanAsync(cancellationToken);
             if (!symbols.Any())
             {
                 _logger.LogWarning("No symbols in watchlist. Using default symbols from configuration.");
@@ -261,8 +264,47 @@ public class DailyScanService : IDailyScanService
         }
     }
 
-    private async Task<List<string>> GetSymbolsToScanAsync()
+    private async Task<List<string>> GetSymbolsToScanAsync(
+        CancellationToken cancellationToken = default)
     {
+        // NEW: Check if options discovery is enabled
+        if (_appSettings.OptionsDiscovery.Enabled && _optionsDiscoveryService != null)
+        {
+            try
+            {
+                _logger.LogInformation("Using dynamic options discovery from Exante");
+
+                var discoveredSymbols = await _optionsDiscoveryService
+                    .DiscoverUnderlyingSymbolsAsync(cancellationToken);
+
+                var symbolsList = discoveredSymbols.ToList();
+
+                if (symbolsList.Any())
+                {
+                    _logger.LogInformation(
+                        "Discovered {Count} underlying symbols: {Symbols}",
+                        symbolsList.Count,
+                        string.Join(", ", symbolsList.Take(20)));
+
+                    return symbolsList;
+                }
+
+                _logger.LogWarning("Options discovery returned no symbols");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during options discovery");
+
+                if (!_appSettings.OptionsDiscovery.FallbackToWatchlist)
+                {
+                    throw;
+                }
+
+                _logger.LogWarning("Falling back to static watchlist");
+            }
+        }
+
+        // EXISTING: Fall back to database or config watchlist
         try
         {
             using var db = _dbContextFactory.Create();
@@ -271,7 +313,7 @@ public class DailyScanService : IDailyScanService
             var watchlistSymbols = await db.Watchlist
                 .Where(w => w.IsActive)
                 .Select(w => w.Symbol)
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
 
             if (watchlistSymbols.Any())
             {

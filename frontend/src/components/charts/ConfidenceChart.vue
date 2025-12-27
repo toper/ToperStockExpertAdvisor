@@ -90,7 +90,7 @@ const chartOptions = {
       beginAtZero: true,
       max: 100,
       ticks: {
-        callback: (value: number) => `${value}%`
+        callback: (value: string | number) => `${value}%`
       }
     }
   }
