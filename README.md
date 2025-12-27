@@ -197,14 +197,6 @@ npm run dev
 
 Wymaga lokalnego Consul: http://localhost:8500
 
-## Dokumentacja
-
-Szczegółowa dokumentacja znajduje się w:
-- **PLAN.md** - Plan implementacji i architektura
-- **docs/API.md** - Dokumentacja API endpoints
-- **docs/STRATEGIES.md** - Opis strategii opcyjnych
-- **docs/DEPLOYMENT.md** - Deployment i CI/CD
-
 ## Licencja
 
 GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007
