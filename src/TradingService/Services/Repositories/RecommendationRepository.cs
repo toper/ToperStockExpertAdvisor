@@ -126,9 +126,24 @@ public class RecommendationRepository : IRecommendationRepository
             var insertedCount = 0;
             foreach (var recommendation in recommendationsList)
             {
+                // Ensure IsActive is set to true
+                recommendation.IsActive = true;
                 await db.InsertAsync(recommendation);
                 insertedCount++;
             }
+
+            // Explicitly set IsActive=true for recommendations just inserted
+            // (they have ScannedAt within last 10 seconds)
+            var now = DateTime.UtcNow;
+            var cutoffTime = now.AddSeconds(-10);
+            var affectedCount = await db.Recommendations
+                .Where(r => symbols.Contains(r.Symbol) && r.ScannedAt >= cutoffTime)
+                .Set(r => r.IsActive, true)
+                .UpdateAsync();
+
+            _logger.LogInformation(
+                "Updated IsActive=true for {Count} recently scanned recommendations",
+                affectedCount);
 
             _logger.LogInformation(
                 "Added {Count} new recommendations for symbols: {Symbols}",

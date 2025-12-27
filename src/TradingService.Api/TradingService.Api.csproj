@@ -9,16 +9,28 @@
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.Sqlite" Version="9.0.0" />
     <PackageReference Include="Consul" Version="1.7.14.9" />
+    <PackageReference Include="DotNetEnv" Version="3.1.1" />
     <PackageReference Include="NLog" Version="5.4.0" />
     <PackageReference Include="NLog.Extensions.Logging" Version="5.4.0" />
+    <PackageReference Include="NLog.Targets.Loki" Version="2.4.0" />
     <PackageReference Include="NLog.Web.AspNetCore" Version="5.4.0" />
     <PackageReference Include="Ocelot" Version="24.0.1" />
     <PackageReference Include="Ocelot.Provider.Consul" Version="24.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <PackageReference Include="Winton.Extensions.Configuration.Consul" Version="3.4.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\TradingService\TradingService.csproj" />
   </ItemGroup>
+
+  <Target Name="RemoveDuplicateContentFilesBeforePublish" BeforeTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <!-- Remove content files from TradingService project to avoid conflicts -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.FileName)' == 'appsettings' And '%(ResolvedFileToPublish.Extension)' == '.json' And '%(ResolvedFileToPublish.RelativePath)' != 'appsettings.json'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.FileName)' == 'appsettings.Development' And '%(ResolvedFileToPublish.Extension)' == '.json'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.FileName)' == 'nlog' And '%(ResolvedFileToPublish.Extension)' == '.config' And '%(ResolvedFileToPublish.RelativePath)' != 'nlog.config'" />
+    </ItemGroup>
+  </Target>
 
 </Project>

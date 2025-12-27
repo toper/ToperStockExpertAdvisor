@@ -219,7 +219,7 @@ public class ShortTermPutStrategy : IStrategy
         // Dividend score (if applicable)
         var dividendScore = CalculateDividendScore(data.DividendInfo);
 
-        // Weight the scores
+        // Weight the scores - empirically selected :)
         var confidence = (trendConfidence * 0.30m) +      // 30% trend
                         (technicalScore * 0.25m) +         // 25% technicals
                         (optionScore * 0.20m) +            // 20% option metrics

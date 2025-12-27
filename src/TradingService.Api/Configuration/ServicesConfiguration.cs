@@ -15,11 +15,20 @@ public static class ServicesConfiguration
         builder.Services.AddControllers();
         builder.Services.AddMemoryCache();
 
-        // Configuration
+        // Configuration with automatic hierarchy: ENV vars > Consul > appsettings.json
+        // Environment variables automatically override using .NET naming convention:
+        // AppSettings__Broker__Exante__ApiKey overrides AppSettings:Broker:Exante:ApiKey
         var configuration = builder.Configuration;
-        var appSettings = new AppSettings();
-        configuration.GetSection("AppSettings").Bind(appSettings);
-        builder.Services.Configure<AppSettings>(configuration.GetSection("AppSettings"));
+
+        // Configure with validation
+        builder.Services.AddOptions<AppSettings>()
+            .Bind(configuration.GetSection("AppSettings"))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Get settings for database initialization
+        var appSettings = configuration.GetSection("AppSettings").Get<AppSettings>()
+            ?? throw new InvalidOperationException("AppSettings configuration is missing");
 
         // Database - Linq2DB
         var connectionString = appSettings.Database.ConnectionString;
@@ -58,11 +67,12 @@ public static class ServicesConfiguration
 
         // Health Checks
         builder.Services.AddHealthChecks()
-            .AddSqlite(
-                connectionString,
-                name: "database",
-                failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
-                tags: new[] { "db", "sqlite" })
+            // TODO: Re-enable SQLite health check after verifying .NET 10 compatibility
+            // .AddSqlite(
+            //     connectionString,
+            //     name: "database",
+            //     failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded,
+            //     tags: new[] { "db", "sqlite" })
             .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "api" });
     }
 }

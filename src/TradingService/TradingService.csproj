@@ -5,17 +5,37 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-TradingService-3b5702b0-2dad-4b67-a7b9-b49b00a0998c</UserSecretsId>
+    <!-- Prevent content files from being copied to referencing projects -->
+    <IncludeBuildOutput>true</IncludeBuildOutput>
+    <ContentTargetFolders>content</ContentTargetFolders>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Consul" Version="1.7.14.9" />
+    <PackageReference Include="DotNetEnv" Version="3.1.1" />
     <PackageReference Include="linq2db.SQLite" Version="5.4.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
     <PackageReference Include="NLog" Version="5.4.0" />
     <PackageReference Include="NLog.Extensions.Logging" Version="5.4.0" />
+    <PackageReference Include="NLog.Targets.Loki" Version="2.4.0" />
     <PackageReference Include="NLog.Web.AspNetCore" Version="5.4.0" />
+    <PackageReference Include="Winton.Extensions.Configuration.Consul" Version="3.4.0" />
     <PackageReference Include="YahooQuotesApi" Version="7.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Prevent content files from being included in referencing projects -->
+    <Content Update="appsettings*.json">
+      <Pack>false</Pack>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Update="nlog.config">
+      <Pack>false</Pack>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

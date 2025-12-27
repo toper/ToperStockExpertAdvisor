@@ -14,8 +14,15 @@ public static class OcelotConfiguration
             .AddConsul();
     }
 
-    public static async Task UseOcelotGateway(this WebApplication app)
+    public static void UseOcelotGateway(this WebApplication app)
     {
-        await app.UseOcelot();
+        // Ocelot ONLY handles /gateway/* paths (external microservices)
+        // All other paths (/api/*, /health, /swagger) go directly to MapControllers
+        app.MapWhen(
+            context => context.Request.Path.StartsWithSegments("/gateway"),
+            gatewayApp =>
+            {
+                gatewayApp.UseOcelot().Wait();
+            });
     }
 }
