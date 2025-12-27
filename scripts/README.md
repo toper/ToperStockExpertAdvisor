@@ -359,7 +359,6 @@ $env:CONSUL_HOST  # Should be http://localhost:8500
 
 ## Additional Resources
 
-- **Full Documentation**: `docs/CONFIGURATION_MANAGEMENT.md`
 - **Consul UI**: http://localhost:8500/ui
 - **Consul Docs**: https://www.consul.io/docs
 
