@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36623.8 d17.14
+VisualStudioVersion = 17.14.36623.8
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
@@ -16,8 +16,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "frontend", "frontend", "{F1
 	ProjectSection(SolutionItems) = preProject
 		frontend\.gitignore = frontend\.gitignore
 		frontend\index.html = frontend\index.html
-		frontend\package.json = frontend\package.json
 		frontend\package-lock.json = frontend\package-lock.json
+		frontend\package.json = frontend\package.json
 		frontend\postcss.config.js = frontend\postcss.config.js
 		frontend\README.md = frontend\README.md
 		frontend\tsconfig.app.json = frontend\tsconfig.app.json
@@ -66,8 +66,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "recommendations", "recommendations", "{C5D4E3F2-1A0B-9C8D-6E5F-4A3B2C1D0E9F}"
 	ProjectSection(SolutionItems) = preProject
 		frontend\src\components\recommendations\RecommendationCard.vue = frontend\src\components\recommendations\RecommendationCard.vue
-		frontend\src\components\recommendations\RecommendationsTable.vue = frontend\src\components\recommendations\RecommendationsTable.vue
 		frontend\src\components\recommendations\RecommendationsList.vue = frontend\src\components\recommendations\RecommendationsList.vue
+		frontend\src\components\recommendations\RecommendationsTable.vue = frontend\src\components\recommendations\RecommendationsTable.vue
 		frontend\src\components\recommendations\StatsCards.vue = frontend\src\components\recommendations\StatsCards.vue
 		frontend\src\components\recommendations\StrategySelector.vue = frontend\src\components\recommendations\StrategySelector.vue
 		frontend\src\components\recommendations\SymbolFilter.vue = frontend\src\components\recommendations\SymbolFilter.vue
@@ -110,7 +110,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		global.json = global.json
 		LICENSE.txt = LICENSE.txt
 		NuGet.Config = NuGet.Config
-		QUICK_START.md = QUICK_START.md
 		README.md = README.md
 	EndProjectSection
 EndProject
