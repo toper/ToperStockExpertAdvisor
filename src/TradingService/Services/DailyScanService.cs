@@ -20,6 +20,7 @@ public class DailyScanService : IDailyScanService
     private readonly ILogger<DailyScanService> _logger;
     private readonly AppSettings _appSettings;
     private readonly IOptionsDiscoveryService? _optionsDiscoveryService;
+    private readonly IFinancialHealthService _financialHealthService;
 
     public DailyScanService(
         IMarketDataAggregator marketDataAggregator,
@@ -28,6 +29,7 @@ public class DailyScanService : IDailyScanService
         IDbContextFactory dbContextFactory,
         ILogger<DailyScanService> logger,
         IOptions<AppSettings> appSettings,
+        IFinancialHealthService financialHealthService,
         IOptionsDiscoveryService? optionsDiscoveryService = null)
     {
         _marketDataAggregator = marketDataAggregator;
@@ -36,6 +38,7 @@ public class DailyScanService : IDailyScanService
         _dbContextFactory = dbContextFactory;
         _logger = logger;
         _appSettings = appSettings.Value;
+        _financialHealthService = financialHealthService;
         _optionsDiscoveryService = optionsDiscoveryService;
     }
 
@@ -65,16 +68,61 @@ public class DailyScanService : IDailyScanService
 
             _logger.LogInformation("Loaded {Count} strategies for scanning", strategies.Count);
 
-            // Get symbols to scan
-            var symbols = await GetSymbolsToScanAsync(cancellationToken);
-            if (!symbols.Any())
+            // Phase 1: Get symbols to scan (now uses fast /groups endpoint)
+            var allSymbols = await GetSymbolsToScanAsync(cancellationToken);
+            if (!allSymbols.Any())
             {
                 _logger.LogWarning("No symbols in watchlist. Using default symbols from configuration.");
-                symbols = _appSettings.Watchlist;
+                allSymbols = _appSettings.Watchlist;
+            }
+
+            _logger.LogInformation("Discovered {Count} symbols for scanning", allSymbols.Count);
+
+            // Phase 2: Pre-filter by financial health (NEW - BATCH)
+            var symbols = allSymbols;
+            if (_appSettings.FinancialHealth.EnablePreFiltering)
+            {
+                _logger.LogInformation("Pre-filtering symbols by financial health...");
+
+                var healthMetrics = await _financialHealthService.CalculateMetricsBatchAsync(
+                    allSymbols, cancellationToken);
+
+                var healthySymbols = healthMetrics
+                    .Where(kvp => _financialHealthService.MeetsHealthRequirements(kvp.Value))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                _logger.LogInformation(
+                    "Pre-filtered to {Healthy}/{Total} healthy symbols (F-Score ≥ {MinF}, Z-Score ≥ {MinZ})",
+                    healthySymbols.Count, allSymbols.Count,
+                    _appSettings.FinancialHealth.MinPiotroskiFScore,
+                    _appSettings.FinancialHealth.MinAltmanZScore);
+
+                symbols = healthySymbols;
+
+                if (!symbols.Any())
+                {
+                    _logger.LogWarning("No symbols met financial health requirements. Scan aborted.");
+                    scanLog.CompletedAt = DateTime.UtcNow;
+                    scanLog.Status = "CompletedNoHealthySymbols";
+                    using (var db = _dbContextFactory.Create())
+                    {
+                        await db.ScanLogs
+                            .Where(s => s.Id == scanLog.Id)
+                            .Set(s => s.CompletedAt, scanLog.CompletedAt)
+                            .Set(s => s.Status, scanLog.Status)
+                            .UpdateAsync();
+                    }
+                    return;
+                }
+            }
+            else
+            {
+                _logger.LogInformation("Financial health pre-filtering is disabled");
             }
 
             _logger.LogInformation("Scanning {Count} symbols: {Symbols}",
-                symbols.Count, string.Join(", ", symbols));
+                symbols.Count, string.Join(", ", symbols.Take(20)));
 
             // Deactivate old recommendations before starting new scan
             await _recommendationRepository.DeactivateOldRecommendationsAsync(DateTime.UtcNow.AddDays(-1));

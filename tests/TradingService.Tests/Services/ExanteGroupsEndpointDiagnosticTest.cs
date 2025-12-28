@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using TradingService.Configuration;
+using TradingService.Services.Integrations;
 
 namespace TradingService.Tests.Services;
 
@@ -29,8 +31,13 @@ public class ExanteGroupsEndpointDiagnosticTest
             Timeout = TimeSpan.FromMinutes(2)
         };
 
-        httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", appSettings.Broker.Exante.JwtToken);
+        // Generate JWT token using ExanteAuthService
+        var authService = new ExanteAuthService(
+            appSettings.Broker.Exante,
+            NullLogger<ExanteAuthService>.Instance,
+            new MockHttpClientFactory());
+
+        await authService.ConfigureClientAuthenticationAsync(httpClient);
 
         Console.WriteLine("=== ANALYZING /md/3.0/groups ENDPOINT ===");
         Console.WriteLine($"Base URL: {httpClient.BaseAddress}");
@@ -160,5 +167,14 @@ public class ExanteGroupsEndpointDiagnosticTest
         public string? Group { get; set; }
         public string? Name { get; set; }
         public string[]? Types { get; set; }
+    }
+
+    // Helper class for creating HttpClient in tests
+    private class MockHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name)
+        {
+            return new HttpClient();
+        }
     }
 }

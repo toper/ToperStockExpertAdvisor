@@ -15,6 +15,7 @@ public class DailyScanServiceTests
     private readonly Mock<IRecommendationRepository> _repositoryMock;
     private readonly Mock<TradingService.Data.IDbContextFactory> _dbFactoryMock;
     private readonly Mock<ILogger<DailyScanService>> _loggerMock;
+    private readonly Mock<IFinancialHealthService> _financialHealthServiceMock;
     private readonly DailyScanService _service;
 
     public DailyScanServiceTests()
@@ -24,6 +25,20 @@ public class DailyScanServiceTests
         _repositoryMock = new Mock<IRecommendationRepository>();
         _dbFactoryMock = new Mock<TradingService.Data.IDbContextFactory>();
         _loggerMock = new Mock<ILogger<DailyScanService>>();
+        _financialHealthServiceMock = new Mock<IFinancialHealthService>();
+
+        // Setup financial health service mock
+        _financialHealthServiceMock
+            .Setup(x => x.CalculateMetricsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FinancialHealthMetrics
+            {
+                PiotroskiFScore = 8m,
+                AltmanZScore = 3.5m
+            });
+
+        _financialHealthServiceMock
+            .Setup(x => x.MeetsHealthRequirements(It.IsAny<FinancialHealthMetrics>()))
+            .Returns(true);
 
         var appSettings = Options.Create(new AppSettings
         {
@@ -40,7 +55,8 @@ public class DailyScanServiceTests
             _repositoryMock.Object,
             _dbFactoryMock.Object,
             _loggerMock.Object,
-            appSettings);
+            appSettings,
+            _financialHealthServiceMock.Object);
     }
 
     [Fact]

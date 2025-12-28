@@ -5,12 +5,13 @@ using Microsoft.Extensions.Logging;
 using TradingService.Configuration;
 using TradingService.Models;
 using TradingService.Services.Interfaces;
+using TradingService.Services.Integrations;
 
 namespace TradingService.Services.Brokers;
 
 /// <summary>
 /// Exante broker implementation for executing PUT option trades.
-/// Supports both demo and live environments.
+/// Supports both demo and live environments with automatic JWT token refresh.
 /// When API credentials are not configured, operates in simulation mode.
 /// </summary>
 public class ExanteBroker : IBroker
@@ -19,15 +20,18 @@ public class ExanteBroker : IBroker
     private readonly ILogger<ExanteBroker> _logger;
     private readonly HttpClient _httpClient;
     private readonly bool _isSimulationMode;
+    private readonly ExanteAuthService? _authService;
 
     public string Name => "Exante";
 
     public ExanteBroker(
         ExanteBrokerSettings settings,
-        ILogger<ExanteBroker> logger)
+        ILogger<ExanteBroker> logger,
+        ExanteAuthService? authService = null)
     {
         _settings = settings;
         _logger = logger;
+        _authService = authService;
         _isSimulationMode = string.IsNullOrEmpty(settings.ApiKey);
 
         _httpClient = new HttpClient
@@ -35,23 +39,37 @@ public class ExanteBroker : IBroker
             BaseAddress = new Uri(settings.BaseUrl)
         };
 
-        if (!_isSimulationMode)
-        {
-            ConfigureAuthentication();
-        }
-
         _logger.LogInformation(
-            "ExanteBroker initialized - Mode: {Mode}, Environment: {Env}",
+            "ExanteBroker initialized - Mode: {Mode}, Environment: {Env}, Auth: {Auth}",
             _isSimulationMode ? "Simulation" : "Live",
-            settings.Environment);
+            settings.Environment,
+            _authService != null ? "Managed" : "Manual");
     }
 
-    private void ConfigureAuthentication()
+    private async Task ConfigureAuthenticationAsync(CancellationToken cancellationToken = default)
     {
-        var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{_settings.ApiKey}:{_settings.ApiSecret}"));
-        _httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Basic", credentials);
+        if (_isSimulationMode)
+            return;
+
+        // Use ExanteAuthService for automatic token management if available
+        if (_authService != null)
+        {
+            var success = await _authService.ConfigureClientAuthenticationAsync(_httpClient, cancellationToken);
+            if (!success)
+            {
+                _logger.LogWarning("Failed to configure authentication via ExanteAuthService");
+            }
+        }
+        else
+        {
+            // Fallback to manual Basic Auth (legacy)
+            var credentials = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes($"{_settings.ApiKey}:{_settings.ApiSecret}"));
+            _httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Basic", credentials);
+        }
+
+        _httpClient.DefaultRequestHeaders.Accept.Clear();
         _httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
     }
@@ -66,6 +84,7 @@ public class ExanteBroker : IBroker
 
         try
         {
+            await ConfigureAuthenticationAsync();
             var response = await _httpClient.GetAsync("/md/3.0/version");
             return response.IsSuccessStatusCode;
         }
@@ -92,6 +111,7 @@ public class ExanteBroker : IBroker
 
         try
         {
+            await ConfigureAuthenticationAsync();
             var response = await _httpClient.GetAsync($"/md/3.0/accounts/{_settings.AccountId}");
             response.EnsureSuccessStatusCode();
 
@@ -127,6 +147,8 @@ public class ExanteBroker : IBroker
 
         try
         {
+            await ConfigureAuthenticationAsync();
+
             var optionSymbol = BuildExanteOptionSymbol(order);
             var orderRequest = new ExanteOrderRequest
             {

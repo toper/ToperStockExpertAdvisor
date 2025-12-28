@@ -11,9 +11,38 @@ using TradingService.Services.Strategies;
 using TradingService.Services.Brokers;
 using LinqToDB.Data;
 using Winton.Extensions.Configuration.Consul;
+using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Extensions.Http;
 
 // Load environment variables from .env file
-DotNetEnv.Env.Load();
+// Search for .env file in multiple locations (from most specific to most general)
+var envPaths = new[]
+{
+    Path.Combine(Directory.GetCurrentDirectory(), ".env"),                           // Current working directory
+    Path.Combine(Directory.GetCurrentDirectory(), "../../.env"),                     // Project root (when running from src/TradingService)
+    Path.Combine(AppContext.BaseDirectory, ".env"),                                  // Binary directory
+    Path.Combine(AppContext.BaseDirectory, "../../.env"),                            // Project root (when running from bin/Debug)
+    Path.Combine(AppContext.BaseDirectory, "../../../.env"),                         // Project root (when running from bin/Debug/net10.0)
+    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../.env")) // Project root (when running from bin/Debug/net10.0)
+};
+
+var envLoaded = false;
+foreach (var envPath in envPaths)
+{
+    if (File.Exists(envPath))
+    {
+        DotNetEnv.Env.Load(envPath);
+        Console.WriteLine($"Loaded .env from: {envPath}");
+        envLoaded = true;
+        break;
+    }
+}
+
+if (!envLoaded)
+{
+    Console.WriteLine("Warning: .env file not found in any expected location. Using system environment variables only.");
+}
 
 var logger = LogManager.Setup()
     .LoadConfigurationFromAppSettings()
@@ -92,13 +121,84 @@ try
             }
             services.AddSingleton<IDbContextFactory>(sp => new DbContextFactory(connectionString));
 
+            // HTTP Client Factory with Polly retry policy
+            services.AddHttpClient();
+
+            // Configure Polly retry policy for Exante API
+            var rateLimitSettings = appSettings.RateLimiting;
+
+            services.AddHttpClient("ExanteApi", client =>
+            {
+                client.BaseAddress = new Uri(appSettings.Broker.Exante.BaseUrl);
+                client.Timeout = TimeSpan.FromMinutes(10);
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+                // Configure retry strategy for HTTP 429 and transient errors
+                options.Retry.MaxRetryAttempts = rateLimitSettings.MaxRetries;
+                options.Retry.Delay = TimeSpan.FromSeconds(rateLimitSettings.InitialRetryDelaySeconds);
+                options.Retry.BackoffType = rateLimitSettings.UseExponentialBackoff
+                    ? Polly.DelayBackoffType.Exponential
+                    : Polly.DelayBackoffType.Constant;
+
+                options.Retry.OnRetry = args =>
+                {
+                    var attempt = args.AttemptNumber + 1;
+                    var delay = args.RetryDelay;
+
+                    if (args.Outcome.Result?.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        var retryAfter = args.Outcome.Result.Headers.RetryAfter?.Delta ?? delay;
+                        logger.Warn(
+                            "HTTP 429 (Too Many Requests) - Retry {0}/{1} after {2}s",
+                            attempt, rateLimitSettings.MaxRetries, retryAfter.TotalSeconds);
+                    }
+                    else if (args.Outcome.Exception != null)
+                    {
+                        logger.Warn(
+                            "HTTP error - Retry {0}/{1} after {2}s: {3}",
+                            attempt, rateLimitSettings.MaxRetries, delay.TotalSeconds,
+                            args.Outcome.Exception.Message);
+                    }
+
+                    return default;
+                };
+            });
+
+            logger.Info("Configured Polly retry policy: Enabled={0}, MaxRetries={1}, InitialDelay={2}s, Exponential={3}",
+                rateLimitSettings.EnableRetryOn429,
+                rateLimitSettings.MaxRetries,
+                rateLimitSettings.InitialRetryDelaySeconds,
+                rateLimitSettings.UseExponentialBackoff);
+
+            // Exante Authentication Service (manages JWT token refresh)
+            services.AddSingleton(sp =>
+            {
+                var serviceLogger = sp.GetRequiredService<ILogger<ExanteAuthService>>();
+                var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                return new ExanteAuthService(appSettings.Broker.Exante, serviceLogger, httpClientFactory);
+            });
+
             // Data Providers
             services.AddSingleton<IMarketDataProvider, YahooFinanceDataProvider>();
             services.AddSingleton<IOptionsDataProvider, ExanteDataProvider>();
             services.AddSingleton<IMarketDataAggregator, MarketDataAggregator>();
 
-            // Options Discovery
-            services.AddSingleton<IOptionsDiscoveryService, ExanteOptionsDiscoveryService>();
+            // SimFin Data Provider
+            services.AddSingleton<SimFinDataProvider>();
+
+            // Financial Health Service
+            services.AddSingleton<IFinancialHealthService, FinancialHealthService>();
+
+            // Options Discovery (with ExanteAuthService dependency)
+            services.AddSingleton<IOptionsDiscoveryService>(sp =>
+            {
+                var serviceAppSettings = sp.GetRequiredService<IOptions<AppSettings>>();
+                var serviceLogger = sp.GetRequiredService<ILogger<ExanteOptionsDiscoveryService>>();
+                var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                var authService = sp.GetRequiredService<ExanteAuthService>();
+                return new ExanteOptionsDiscoveryService(serviceAppSettings, serviceLogger, httpClientFactory, authService);
+            });
 
             // Repositories
             services.AddSingleton<IRecommendationRepository, RecommendationRepository>();

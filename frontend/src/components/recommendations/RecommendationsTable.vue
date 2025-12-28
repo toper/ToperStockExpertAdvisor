@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { format } from 'date-fns'
-import { ArrowUpIcon, ArrowDownIcon } from '@heroicons/vue/24/solid'
+import { ArrowUpIcon, ArrowDownIcon, CalculatorIcon } from '@heroicons/vue/24/solid'
 import type { PutRecommendation } from '@/types'
 import { ref, computed } from 'vue'
+import Modal from '@/components/common/Modal.vue'
+import ProfitCalculator from '@/components/charts/ProfitCalculator.vue'
 
 const props = defineProps<{
   recommendations: PutRecommendation[]
@@ -13,6 +15,8 @@ type SortDirection = 'asc' | 'desc'
 
 const sortKey = ref<SortKey>('confidence')
 const sortDirection = ref<SortDirection>('desc')
+const showCalculator = ref(false)
+const selectedRecommendation = ref<PutRecommendation | null>(null)
 
 const sortedRecommendations = computed(() => {
   return [...props.recommendations].sort((a, b) => {
@@ -45,6 +49,16 @@ function getConfidenceClass(confidence: number): string {
 
 function formatDate(dateStr: string): string {
   return format(new Date(dateStr), 'MMM dd, yyyy')
+}
+
+function openCalculator(recommendation: PutRecommendation) {
+  selectedRecommendation.value = recommendation
+  showCalculator.value = true
+}
+
+function closeCalculator() {
+  showCalculator.value = false
+  selectedRecommendation.value = null
 }
 </script>
 
@@ -128,6 +142,9 @@ function formatDate(dateStr: string): string {
                 />
               </div>
             </th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
@@ -168,14 +185,36 @@ function formatDate(dateStr: string): string {
                 {{ (rec.confidence * 100).toFixed(0) }}%
               </span>
             </td>
+            <td class="px-6 py-4 whitespace-nowrap text-center">
+              <button
+                @click="openCalculator(rec)"
+                class="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                title="Calculate profit/loss"
+              >
+                <CalculatorIcon class="h-4 w-4" />
+                Calculate
+              </button>
+            </td>
           </tr>
           <tr v-if="!recommendations.length">
-            <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+            <td colspan="9" class="px-6 py-12 text-center text-gray-500">
               No recommendations found
             </td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <!-- Calculator Modal -->
+    <Modal
+      :open="showCalculator"
+      :title="`Profit Calculator - ${selectedRecommendation?.symbol || ''}`"
+      @close="closeCalculator"
+    >
+      <ProfitCalculator
+        v-if="selectedRecommendation"
+        :recommendation="selectedRecommendation"
+      />
+    </Modal>
   </div>
 </template>

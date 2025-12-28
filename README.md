@@ -84,11 +84,13 @@ Przed pierwszym uruchomieniem zainicjuj konfigurację w Consul KV:
 
 ```bash
 # Windows PowerShell
-.\scripts\consul-init.ps1
+.\scripts\consul-load-config.ps1
 
 # Linux/Mac
-./scripts/consul-init.sh
+./scripts/consul-load-config.sh
 ```
+
+> **Uwaga**: Skrypt wymaga pliku `.env` z credentialami. Skopiuj `.env.example` i dostosuj wartości przed uruchomieniem.
 
 ### Krok 3: Uruchomienie aplikacji
 

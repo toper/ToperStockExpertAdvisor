@@ -30,8 +30,12 @@ public class ExanteOptionsDiscoveryServiceQuickTests
         appSettings.OptionsDiscovery.MinVolume = 0;
 
         var mockLogger = new Mock<ILogger<ExanteOptionsDiscoveryService>>();
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient());
+
         var options = Options.Create(appSettings);
-        var service = new ExanteOptionsDiscoveryService(options, mockLogger.Object);
+        var service = new ExanteOptionsDiscoveryService(options, mockLogger.Object, mockHttpClientFactory.Object);
 
         var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
 

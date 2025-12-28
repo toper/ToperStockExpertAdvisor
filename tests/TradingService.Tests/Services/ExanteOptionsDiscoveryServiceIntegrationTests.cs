@@ -14,12 +14,16 @@ namespace TradingService.Tests.Services;
 public class ExanteOptionsDiscoveryServiceIntegrationTests : IAsyncLifetime
 {
     private readonly Mock<ILogger<ExanteOptionsDiscoveryService>> _mockLogger;
+    private readonly Mock<IHttpClientFactory> _mockHttpClientFactory;
     private readonly AppSettings _appSettings;
     private ExanteOptionsDiscoveryService? _service;
 
     public ExanteOptionsDiscoveryServiceIntegrationTests()
     {
         _mockLogger = new Mock<ILogger<ExanteOptionsDiscoveryService>>();
+        _mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        _mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient());
 
         // Load configuration from appsettings.IntegrationTests.json
         var configuration = new ConfigurationBuilder()
@@ -35,7 +39,7 @@ public class ExanteOptionsDiscoveryServiceIntegrationTests : IAsyncLifetime
     {
         // Create service with real Exante credentials
         var options = Options.Create(_appSettings);
-        _service = new ExanteOptionsDiscoveryService(options, _mockLogger.Object);
+        _service = new ExanteOptionsDiscoveryService(options, _mockLogger.Object, _mockHttpClientFactory.Object);
         return Task.CompletedTask;
     }
 
@@ -197,8 +201,12 @@ public class ExanteOptionsDiscoveryServiceManualTests
         // This test fetches ALL options from Exante and prints detailed information
         // Useful for understanding the API response structure
 
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient());
+
         var options = Options.Create(_appSettings);
-        var service = new ExanteOptionsDiscoveryService(options, _mockLogger.Object);
+        var service = new ExanteOptionsDiscoveryService(options, _mockLogger.Object, mockHttpClientFactory.Object);
 
         var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         var result = await service.DiscoverUnderlyingSymbolsAsync(cts.Token);
@@ -246,8 +254,12 @@ public class ExanteOptionsDiscoveryServiceManualTests
             _appSettings.OptionsDiscovery.MinOpenInterest = config.MinOI;
             _appSettings.OptionsDiscovery.MinVolume = config.MinVol;
 
+            var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+            mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
+                .Returns(new HttpClient());
+
             var options = Options.Create(_appSettings);
-            var service = new ExanteOptionsDiscoveryService(options, _mockLogger.Object);
+            var service = new ExanteOptionsDiscoveryService(options, _mockLogger.Object, mockHttpClientFactory.Object);
 
             var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var result = await service.DiscoverUnderlyingSymbolsAsync(cts.Token);

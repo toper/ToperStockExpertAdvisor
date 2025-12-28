@@ -2,7 +2,10 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using TradingService.Configuration;
+using TradingService.Services.Integrations;
 
 namespace TradingService.Tests.Services;
 
@@ -30,8 +33,14 @@ public class ExanteApiRealTests
             Timeout = TimeSpan.FromMinutes(10)
         };
 
-        httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", appSettings.Broker.Exante.JwtToken);
+        // Generate JWT token using ExanteAuthService
+        var authService = new ExanteAuthService(
+            appSettings.Broker.Exante,
+            NullLogger<ExanteAuthService>.Instance,
+            new MockHttpClientFactory());
+
+        await authService.ConfigureClientAuthenticationAsync(httpClient);
+
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -119,8 +128,13 @@ public class ExanteApiRealTests
             Timeout = TimeSpan.FromMinutes(10)
         };
 
-        httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", appSettings.Broker.Exante.JwtToken);
+        // Generate JWT token using ExanteAuthService
+        var authService = new ExanteAuthService(
+            appSettings.Broker.Exante,
+            NullLogger<ExanteAuthService>.Instance,
+            new MockHttpClientFactory());
+
+        await authService.ConfigureClientAuthenticationAsync(httpClient);
 
         Console.WriteLine("=== COUNTING ALL OPTIONS (this will take ~5 minutes) ===");
 
@@ -198,5 +212,14 @@ public class ExanteApiRealTests
         Console.WriteLine($"Sample tickers (first 50): {string.Join(", ", tickers.Take(50))}");
         Console.WriteLine();
         Console.WriteLine($"Sample underlyings (first 50): {string.Join(", ", underlyingSymbols.Take(50))}");
+    }
+
+    // Helper class for creating HttpClient in tests
+    private class MockHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name)
+        {
+            return new HttpClient();
+        }
     }
 }

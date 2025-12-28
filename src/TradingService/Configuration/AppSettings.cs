@@ -24,6 +24,15 @@ public class AppSettings
 
     [Required]
     public OptionsDiscoverySettings OptionsDiscovery { get; set; } = new();
+
+    [Required]
+    public FinancialHealthSettings FinancialHealth { get; set; } = new();
+
+    [Required]
+    public RateLimitingSettings RateLimiting { get; set; } = new();
+
+    [Required]
+    public SimFinSettings SimFin { get; set; } = new();
 }
 
 public class StrategySettings
@@ -68,6 +77,11 @@ public class BrokerSettings
 
 public class ExanteBrokerSettings
 {
+    /// <summary>
+    /// Client ID for JWT authentication (obtain from Exante Client Area)
+    /// </summary>
+    public string ClientId { get; set; } = string.Empty;
+
     public string ApiKey { get; set; } = string.Empty;
     public string ApiSecret { get; set; } = string.Empty;
     public string AccountId { get; set; } = string.Empty;
@@ -78,11 +92,6 @@ public class ExanteBrokerSettings
     [Required]
     [Url]
     public string BaseUrl { get; set; } = "https://api-demo.exante.eu";
-
-    /// <summary>
-    /// JWT token for Bearer authentication (required for market data endpoints)
-    /// </summary>
-    public string JwtToken { get; set; } = string.Empty;
 }
 
 public class OptionsDiscoverySettings
@@ -91,6 +100,11 @@ public class OptionsDiscoverySettings
     /// Enable dynamic options discovery from Exante (replaces static watchlist)
     /// </summary>
     public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Use fast /md/3.0/groups endpoint instead of parsing 1.6M options
+    /// </summary>
+    public bool UseGroupsEndpoint { get; set; } = true;
 
     /// <summary>
     /// Minimum open interest to consider an option liquid
@@ -121,4 +135,76 @@ public class OptionsDiscoverySettings
     /// Only discover options expiring within this range
     /// </summary>
     public int MaxExpiryDays { get; set; } = 90;
+}
+
+public class FinancialHealthSettings
+{
+    /// <summary>
+    /// Enable pre-filtering symbols by financial health before fetching expensive market data
+    /// </summary>
+    public bool EnablePreFiltering { get; set; } = true;
+
+    /// <summary>
+    /// Minimum Piotroski F-Score (0-9 scale, higher is better)
+    /// </summary>
+    [Range(0, 9)]
+    public decimal MinPiotroskiFScore { get; set; } = 7m;
+
+    /// <summary>
+    /// Minimum Altman Z-Score (>2.99 safe, 1.81-2.99 grey, <1.81 distress)
+    /// </summary>
+    public decimal MinAltmanZScore { get; set; } = 1.81m;
+
+    /// <summary>
+    /// Maximum concurrent health calculations
+    /// </summary>
+    [Range(1, 20)]
+    public int BatchConcurrency { get; set; } = 5;
+}
+
+public class RateLimitingSettings
+{
+    /// <summary>
+    /// Enable automatic retry on HTTP 429 (Too Many Requests)
+    /// </summary>
+    public bool EnableRetryOn429 { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of retry attempts
+    /// </summary>
+    [Range(1, 10)]
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// Initial retry delay in seconds
+    /// </summary>
+    [Range(1, 300)]
+    public int InitialRetryDelaySeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Use exponential backoff (60s, 120s, 240s) instead of fixed delay
+    /// </summary>
+    public bool UseExponentialBackoff { get; set; } = true;
+}
+
+public class SimFinSettings
+{
+    /// <summary>
+    /// SimFin API base URL
+    /// </summary>
+    [Required]
+    [Url]
+    public string BaseUrl { get; set; } = "https://backend.simfin.com/api/v3";
+
+    /// <summary>
+    /// SimFin API key (get from https://simfin.com/)
+    /// </summary>
+    [Required]
+    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Request timeout in seconds
+    /// </summary>
+    [Range(5, 60)]
+    public int TimeoutSeconds { get; set; } = 30;
 }

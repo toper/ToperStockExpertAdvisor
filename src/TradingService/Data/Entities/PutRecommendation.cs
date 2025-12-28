@@ -43,4 +43,10 @@ public class PutRecommendation
 
     [Column]
     public bool IsActive { get; set; } = true;
+
+    [Column]
+    public decimal? PiotroskiFScore { get; set; }
+
+    [Column]
+    public decimal? AltmanZScore { get; set; }
 }

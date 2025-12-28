@@ -13,6 +13,8 @@ export interface PutRecommendation {
   scannedAt: string
   potentialReturn: number
   otmPercent: number
+  piotroskiFScore?: number
+  altmanZScore?: number
 }
 
 export interface Result<T> {

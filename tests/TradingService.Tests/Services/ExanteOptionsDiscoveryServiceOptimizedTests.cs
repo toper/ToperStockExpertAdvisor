@@ -26,8 +26,12 @@ public class ExanteOptionsDiscoveryServiceOptimizedTests
         configuration.GetSection("AppSettings").Bind(appSettings);
 
         var mockLogger = new Mock<ILogger<ExanteOptionsDiscoveryService>>();
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient());
+
         var options = Options.Create(appSettings);
-        var service = new ExanteOptionsDiscoveryService(options, mockLogger.Object);
+        var service = new ExanteOptionsDiscoveryService(options, mockLogger.Object, mockHttpClientFactory.Object);
 
         var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30)); // Should complete in <30 seconds
 
@@ -102,8 +106,7 @@ public class ExanteOptionsDiscoveryServiceOptimizedTests
                 Exante = new ExanteBrokerSettings
                 {
                     BaseUrl = "https://api-demo.exante.eu",
-                    ApiKey = "", // Empty = simulation mode
-                    JwtToken = ""
+                    ApiKey = "" // Empty = simulation mode
                 }
             },
             OptionsDiscovery = new OptionsDiscoverySettings
@@ -113,8 +116,12 @@ public class ExanteOptionsDiscoveryServiceOptimizedTests
         };
 
         var mockLogger = new Mock<ILogger<ExanteOptionsDiscoveryService>>();
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>()))
+            .Returns(new HttpClient());
+
         var options = Options.Create(appSettings);
-        var service = new ExanteOptionsDiscoveryService(options, mockLogger.Object);
+        var service = new ExanteOptionsDiscoveryService(options, mockLogger.Object, mockHttpClientFactory.Object);
 
         // Act
         var result = await service.DiscoverUnderlyingSymbolsAsync();

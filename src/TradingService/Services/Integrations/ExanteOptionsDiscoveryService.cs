@@ -22,6 +22,7 @@ public partial class ExanteOptionsDiscoveryService : IOptionsDiscoveryService
     private readonly ILogger<ExanteOptionsDiscoveryService> _logger;
     private readonly HttpClient _httpClient;
     private readonly bool _isSimulationMode;
+    private readonly ExanteAuthService? _authService;
     private readonly SemaphoreSlim _rateLimiter = new(5, 5); // Max 5 concurrent requests
     private const int RequestDelayMs = 100; // 100ms between requests
 
@@ -31,50 +32,56 @@ public partial class ExanteOptionsDiscoveryService : IOptionsDiscoveryService
 
     public ExanteOptionsDiscoveryService(
         IOptions<AppSettings> appSettings,
-        ILogger<ExanteOptionsDiscoveryService> logger)
+        ILogger<ExanteOptionsDiscoveryService> logger,
+        IHttpClientFactory httpClientFactory,
+        ExanteAuthService? authService = null)
     {
         _brokerSettings = appSettings.Value.Broker.Exante;
         _discoverySettings = appSettings.Value.OptionsDiscovery;
         _logger = logger;
+        _authService = authService;
         _isSimulationMode = string.IsNullOrEmpty(_brokerSettings.ApiKey);
 
-        _httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(_brokerSettings.BaseUrl),
-            Timeout = TimeSpan.FromMinutes(10) // Large response: 1.6M options, ~900MB
-        };
-
-        if (!_isSimulationMode)
-        {
-            ConfigureAuthentication();
-        }
+        // Use named HttpClient with Polly retry policies
+        _httpClient = httpClientFactory.CreateClient("ExanteApi");
 
         _logger.LogInformation(
-            "ExanteOptionsDiscoveryService initialized - Mode: {Mode}, Filters: MinOI={MinOI}, MinVol={MinVol}",
+            "ExanteOptionsDiscoveryService initialized - Mode: {Mode}, Auth: {Auth}, UseGroups: {UseGroups}, Filters: MinOI={MinOI}, MinVol={MinVol}",
             _isSimulationMode ? "Simulation" : "Live",
+            _authService != null ? "Managed" : "Manual",
+            _discoverySettings.UseGroupsEndpoint,
             _discoverySettings.MinOpenInterest,
             _discoverySettings.MinVolume);
     }
 
-    private void ConfigureAuthentication()
+    private async Task ConfigureAuthenticationAsync(CancellationToken cancellationToken = default)
     {
-        // Prefer JWT Bearer token if available (required for market data endpoints)
-        if (!string.IsNullOrEmpty(_brokerSettings.JwtToken))
+        if (_isSimulationMode)
+            return;
+
+        // Use ExanteAuthService for automatic token management if available
+        if (_authService != null)
         {
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _brokerSettings.JwtToken);
-            _logger.LogDebug("Using JWT Bearer authentication");
+            var success = await _authService.ConfigureClientAuthenticationAsync(_httpClient, cancellationToken);
+            if (!success)
+            {
+                _logger.LogWarning("Failed to configure authentication via ExanteAuthService");
+            }
         }
         else
         {
-            // Fallback to Basic Auth
-            var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes($"{_brokerSettings.ApiKey}:{_brokerSettings.ApiSecret}"));
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", credentials);
-            _logger.LogDebug("Using Basic authentication");
+            // Fallback to manual Basic authentication (legacy, when auth service is not available)
+            if (!string.IsNullOrEmpty(_brokerSettings.ApiKey))
+            {
+                var credentials = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes($"{_brokerSettings.ApiKey}:{_brokerSettings.ApiSecret}"));
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Basic", credentials);
+                _logger.LogDebug("Using Basic authentication (manual)");
+            }
         }
 
+        _httpClient.DefaultRequestHeaders.Accept.Clear();
         _httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
     }
@@ -90,10 +97,38 @@ public partial class ExanteOptionsDiscoveryService : IOptionsDiscoveryService
 
         try
         {
-            _logger.LogInformation("Starting FULL options discovery from Exante API - parsing all options");
+            // Configure authentication (get fresh JWT token if needed)
+            await ConfigureAuthenticationAsync(cancellationToken);
+
+            // OPTIMIZED APPROACH: Try fast /groups endpoint first
+            if (_discoverySettings.UseGroupsEndpoint)
+            {
+                try
+                {
+                    _logger.LogInformation("Using optimized /groups endpoint for discovery");
+                    var symbols = await FetchSymbolsWithOptionsAsync(cancellationToken);
+
+                    if (symbols.Any())
+                    {
+                        _logger.LogInformation(
+                            "Discovered {Count} underlying symbols with options: {Symbols}",
+                            symbols.Count,
+                            string.Join(", ", symbols.Take(20)));
+                        return symbols;
+                    }
+
+                    _logger.LogWarning("Groups endpoint returned no symbols, falling back to full parsing");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Groups endpoint failed, falling back to full parsing");
+                }
+            }
+
+            // FALLBACK: Full options parsing (existing implementation)
+            _logger.LogInformation("Using full options parsing from /types/OPTION");
             _logger.LogWarning("This may take 5-15 minutes for large datasets (~1.6M options)");
 
-            // FULL PARSING APPROACH: Fetch all options and extract unique underlying symbols
             // Step 1: Fetch all options from Exante /md/3.0/types/OPTION
             var allOptions = await FetchAllOptionsAsync(cancellationToken);
 

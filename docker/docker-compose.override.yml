@@ -1,12 +1,11 @@
 # Development overrides
-version: '3.8'
 
 services:
   trading-service:
     environment:
       - DOTNET_ENVIRONMENT=Development
       - AppSettings__ScanTime=09:30
-      - AppSettings__Strategy__MinConfidence=0.5
+      - AppSettings__Strategy__MinConfidence=0.8
     volumes:
       - ../src/TradingService/appsettings.Development.json:/app/appsettings.Development.json:ro
 

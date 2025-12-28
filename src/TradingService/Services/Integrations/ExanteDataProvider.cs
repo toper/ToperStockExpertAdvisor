@@ -285,7 +285,6 @@ public class ExanteDataProvider : IOptionsDataProvider
     {
         // Simplified Black-Scholes approximation for testing
         var timeToExpiry = daysToExpiry / 365m;
-        var riskFreeRate = 0.05m; // 5% risk-free rate
 
         var intrinsicValue = isPut
             ? Math.Max(0, strike - spot)

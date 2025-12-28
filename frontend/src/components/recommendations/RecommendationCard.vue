@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { format } from 'date-fns'
-import { CalendarIcon, ArrowTrendingUpIcon } from '@heroicons/vue/24/outline'
+import { CalendarIcon, ArrowTrendingUpIcon, CalculatorIcon } from '@heroicons/vue/24/outline'
 import type { PutRecommendation } from '@/types'
 
 const props = defineProps<{
   recommendation: PutRecommendation
+}>()
+
+const emit = defineEmits<{
+  calculate: [recommendation: PutRecommendation]
 }>()
 
 const confidenceColor = computed(() => {
@@ -80,6 +84,16 @@ import { computed } from 'vue'
         <span>Return: {{ recommendation.potentialReturn.toFixed(2) }}%</span>
         <span>Scanned: {{ formattedScannedAt }}</span>
       </div>
+    </div>
+
+    <div class="mt-4">
+      <button
+        @click="emit('calculate', recommendation)"
+        class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+      >
+        <CalculatorIcon class="h-5 w-5" />
+        Calculate Profit/Loss
+      </button>
     </div>
   </div>
 </template>
