@@ -11,11 +11,13 @@ namespace TradingService.Services.Strategies;
 /// Volatility Crush strategy that targets stocks with elevated implied volatility
 /// that is expected to decrease, allowing PUT sellers to capture premium decay.
 /// Best suited for post-earnings or event-driven scenarios where IV is artificially high.
+/// Filters by Piotroski F-Score and Altman Z-Score for financial health.
 /// </summary>
 public class VolatilityCrushStrategy : IStrategy
 {
     private readonly ILogger<VolatilityCrushStrategy> _logger;
     private readonly StrategySettings _settings;
+    private readonly IFinancialHealthService _financialHealthService;
 
     // IV thresholds for this strategy
     private const decimal MinImpliedVolatility = 0.25m;  // Minimum IV to consider
@@ -24,16 +26,18 @@ public class VolatilityCrushStrategy : IStrategy
     private const decimal OptimalIVMax = 0.50m;          // Optimal IV range end
 
     public string Name => "VolatilityCrush";
-    public string Description => "Targets stocks with elevated IV expected to decrease, capturing premium from volatility contraction";
+    public string Description => "Targets financially healthy stocks with elevated IV expected to decrease, capturing premium from volatility contraction";
     public int TargetExpiryMinDays => _settings.MinExpiryDays;
     public int TargetExpiryMaxDays => _settings.MaxExpiryDays;
 
     public VolatilityCrushStrategy(
         ILogger<VolatilityCrushStrategy> logger,
-        IOptions<AppSettings> appSettings)
+        IOptions<AppSettings> appSettings,
+        IFinancialHealthService financialHealthService)
     {
         _logger = logger;
         _settings = appSettings.Value.Strategy;
+        _financialHealthService = financialHealthService;
     }
 
     public async Task<IEnumerable<PutRecommendation>> AnalyzeAsync(
@@ -58,6 +62,27 @@ public class VolatilityCrushStrategy : IStrategy
 
             var symbol = data.MarketData.Symbol;
             var currentPrice = data.MarketData.CurrentPrice;
+
+            // FIRST: Check financial health (Piotroski F-Score & Altman Z-Score)
+            _logger.LogInformation("Checking financial health for {Symbol}", symbol);
+            var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
+
+            if (!_financialHealthService.MeetsHealthRequirements(healthMetrics))
+            {
+                _logger.LogInformation(
+                    "Skipping {Symbol} - Does not meet financial health requirements. " +
+                    "F-Score: {FScore}, Z-Score: {ZScore}",
+                    symbol,
+                    healthMetrics.PiotroskiFScore?.ToString("F1") ?? "N/A",
+                    healthMetrics.AltmanZScore?.ToString("F2") ?? "N/A");
+                return recommendations;
+            }
+
+            _logger.LogInformation(
+                "{Symbol} passes financial health check - F-Score: {FScore}, Z-Score: {ZScore}",
+                symbol,
+                healthMetrics.PiotroskiFScore,
+                healthMetrics.AltmanZScore);
 
             // Calculate average IV across available options
             var avgIV = data.ShortTermPutOptions.Average(o => o.ImpliedVolatility);
@@ -100,7 +125,7 @@ public class VolatilityCrushStrategy : IStrategy
                     break;
 
                 var recommendation = await AnalyzePutOptionAsync(
-                    data, option, avgIV, cancellationToken);
+                    data, option, avgIV, healthMetrics, cancellationToken);
 
                 if (recommendation != null)
                 {
@@ -112,7 +137,7 @@ public class VolatilityCrushStrategy : IStrategy
             var topRecommendations = recommendations
                 .OrderByDescending(r => r.Confidence)
                 .ThenByDescending(r => r.Premium) // Prefer higher premiums for this strategy
-                .Take(3)
+                .Take(1) // Only best recommendation per symbol
                 .ToList();
 
             if (topRecommendations.Any())
@@ -151,6 +176,7 @@ public class VolatilityCrushStrategy : IStrategy
         AggregatedMarketData data,
         OptionContract option,
         decimal avgIV,
+        FinancialHealthMetrics healthMetrics,
         CancellationToken cancellationToken)
     {
         return Task.Run(() =>
@@ -171,6 +197,13 @@ public class VolatilityCrushStrategy : IStrategy
                 }
 
                 if (safetyMargin > 0.18m)
+                {
+                    return null;
+                }
+
+                // Skip if delta is too high (closer to ITM, more risky)
+                // For PUT options, delta is negative; -0.30 is safer than -0.40
+                if (option.Delta < -0.30m)
                 {
                     return null;
                 }
@@ -218,7 +251,13 @@ public class VolatilityCrushStrategy : IStrategy
                     ExpectedGrowthPercent = data.TrendAnalysis?.ExpectedGrowthPercent ?? 0m,
                     StrategyName = Name,
                     ScannedAt = DateTime.UtcNow,
-                    IsActive = true
+                    IsActive = true,
+                    PiotroskiFScore = healthMetrics.PiotroskiFScore,
+                    AltmanZScore = healthMetrics.AltmanZScore,
+                    ExanteSymbol = option.ExanteSymbol,
+                    OptionPrice = option.Ask,
+                    Volume = option.Volume,
+                    OpenInterest = option.OpenInterest
                 };
             }
             catch (Exception ex)

@@ -30,20 +30,12 @@ public class ExanteApiDiagnosticTests
             BaseAddress = new Uri(_appSettings.Broker.Exante.BaseUrl)
         };
 
-        // Use JWT Bearer token if available, otherwise Basic Auth
-        if (!string.IsNullOrEmpty(_appSettings.Broker.Exante.JwtToken))
-        {
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _appSettings.Broker.Exante.JwtToken);
-        }
-        else
-        {
-            var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes(
-                    $"{_appSettings.Broker.Exante.ApiKey}:{_appSettings.Broker.Exante.ApiSecret}"));
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", credentials);
-        }
+        // Use Basic Auth for diagnostic tests (JWT tokens are generated via ExanteAuthService in production)
+        var credentials = Convert.ToBase64String(
+            Encoding.UTF8.GetBytes(
+                $"{_appSettings.Broker.Exante.ApiKey}:{_appSettings.Broker.Exante.ApiSecret}"));
+        _httpClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Basic", credentials);
 
         _httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));

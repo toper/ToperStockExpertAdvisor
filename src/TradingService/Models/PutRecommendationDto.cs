@@ -14,6 +14,8 @@ public record PutRecommendationDto
     public decimal ExpectedGrowthPercent { get; init; }
     public string StrategyName { get; init; } = string.Empty;
     public DateTime ScannedAt { get; init; }
+    public decimal? PiotroskiFScore { get; init; }
+    public decimal? AltmanZScore { get; init; }
 
     // Calculated properties for frontend
     public decimal PotentialReturn => Premium / StrikePrice * 100;

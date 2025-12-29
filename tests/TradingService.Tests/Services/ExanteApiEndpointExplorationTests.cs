@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using TradingService.Configuration;
+using TradingService.Services.Integrations;
 
 namespace TradingService.Tests.Services;
 
@@ -30,8 +32,14 @@ public class ExanteApiEndpointExplorationTests
             Timeout = TimeSpan.FromMinutes(5)
         };
 
-        httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", appSettings.Broker.Exante.JwtToken);
+        // Generate JWT token using ExanteAuthService
+        var authService = new ExanteAuthService(
+            appSettings.Broker.Exante,
+            NullLogger<ExanteAuthService>.Instance,
+            new MockHttpClientFactory());
+
+        await authService.ConfigureClientAuthenticationAsync(httpClient);
+
         httpClient.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 
@@ -148,8 +156,13 @@ public class ExanteApiEndpointExplorationTests
             Timeout = TimeSpan.FromMinutes(10)
         };
 
-        httpClient.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", appSettings.Broker.Exante.JwtToken);
+        // Generate JWT token using ExanteAuthService
+        var authService = new ExanteAuthService(
+            appSettings.Broker.Exante,
+            NullLogger<ExanteAuthService>.Instance,
+            new MockHttpClientFactory());
+
+        await authService.ConfigureClientAuthenticationAsync(httpClient);
 
         Console.WriteLine("=== ANALYZING /md/3.0/types/OPTION FOR STOCK OPTIONS ===");
 
@@ -253,6 +266,15 @@ public class ExanteApiEndpointExplorationTests
         if (stockOptions.Any())
         {
             Console.WriteLine($"Stock option tickers (first 100): {string.Join(", ", stockOptions.Take(100))}");
+        }
+    }
+
+    // Helper class for creating HttpClient in tests
+    private class MockHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name)
+        {
+            return new HttpClient();
         }
     }
 }

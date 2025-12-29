@@ -127,6 +127,8 @@ public class RecommendationsController : BaseController
         Confidence = entity.Confidence,
         ExpectedGrowthPercent = entity.ExpectedGrowthPercent,
         StrategyName = entity.StrategyName,
-        ScannedAt = entity.ScannedAt
+        ScannedAt = entity.ScannedAt,
+        PiotroskiFScore = entity.PiotroskiFScore,
+        AltmanZScore = entity.AltmanZScore
     };
 }

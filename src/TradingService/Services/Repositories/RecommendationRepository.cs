@@ -25,13 +25,33 @@ public class RecommendationRepository : IRecommendationRepository
         {
             using var db = _dbContextFactory.Create();
 
-            var recommendations = await db.Recommendations
+            // Get the latest scan date
+            var latestScanDate = await db.Recommendations
                 .Where(r => r.IsActive)
                 .OrderByDescending(r => r.ScannedAt)
-                .ThenByDescending(r => r.Confidence)
+                .Select(r => r.ScannedAt)
+                .FirstOrDefaultAsync();
+
+            if (latestScanDate == default)
+            {
+                _logger.LogInformation("No active recommendations found");
+                return Enumerable.Empty<PutRecommendation>();
+            }
+
+            // Return only recommendations from the latest scan (within 1 minute window)
+            var scanWindow = latestScanDate.AddMinutes(-1);
+
+            var recommendations = await db.Recommendations
+                .Where(r => r.IsActive && r.ScannedAt >= scanWindow)
+                .OrderByDescending(r => r.Confidence)
+                .ThenBy(r => r.Symbol)
                 .ToListAsync();
 
-            _logger.LogInformation("Retrieved {Count} active recommendations", recommendations.Count);
+            _logger.LogInformation(
+                "Retrieved {Count} active recommendations from latest scan at {ScanDate:yyyy-MM-dd HH:mm:ss}",
+                recommendations.Count,
+                latestScanDate);
+
             return recommendations;
         }
         catch (Exception ex)

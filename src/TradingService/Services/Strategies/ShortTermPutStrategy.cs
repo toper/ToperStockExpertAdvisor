@@ -10,23 +10,27 @@ namespace TradingService.Services.Strategies;
 /// <summary>
 /// Short-term PUT selling strategy focusing on 2-3 week expirations
 /// Targets stocks with upward trend and high confidence levels
+/// Filters by Piotroski F-Score and Altman Z-Score for financial health
 /// </summary>
 public class ShortTermPutStrategy : IStrategy
 {
     private readonly ILogger<ShortTermPutStrategy> _logger;
     private readonly StrategySettings _settings;
+    private readonly IFinancialHealthService _financialHealthService;
 
     public string Name => "ShortTermPut";
-    public string Description => "Sells PUT options 2-3 weeks out on stocks with strong upward trends";
+    public string Description => "Sells PUT options 2-3 weeks out on financially healthy stocks with strong upward trends";
     public int TargetExpiryMinDays => _settings.MinExpiryDays;
     public int TargetExpiryMaxDays => _settings.MaxExpiryDays;
 
     public ShortTermPutStrategy(
         ILogger<ShortTermPutStrategy> logger,
-        IOptions<AppSettings> appSettings)
+        IOptions<AppSettings> appSettings,
+        IFinancialHealthService financialHealthService)
     {
         _logger = logger;
         _settings = appSettings.Value.Strategy;
+        _financialHealthService = financialHealthService;
     }
 
     public async Task<IEnumerable<PutRecommendation>> AnalyzeAsync(
@@ -58,6 +62,27 @@ public class ShortTermPutStrategy : IStrategy
             var symbol = data.MarketData.Symbol;
             var currentPrice = data.MarketData.CurrentPrice;
 
+            // FIRST: Check financial health (Piotroski F-Score & Altman Z-Score)
+            _logger.LogInformation("Checking financial health for {Symbol}", symbol);
+            var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
+
+            if (!_financialHealthService.MeetsHealthRequirements(healthMetrics))
+            {
+                _logger.LogInformation(
+                    "Skipping {Symbol} - Does not meet financial health requirements. " +
+                    "F-Score: {FScore}, Z-Score: {ZScore}",
+                    symbol,
+                    healthMetrics.PiotroskiFScore?.ToString("F1") ?? "N/A",
+                    healthMetrics.AltmanZScore?.ToString("F2") ?? "N/A");
+                return recommendations;
+            }
+
+            _logger.LogInformation(
+                "{Symbol} passes financial health check - F-Score: {FScore}, Z-Score: {ZScore}",
+                symbol,
+                healthMetrics.PiotroskiFScore,
+                healthMetrics.AltmanZScore);
+
             // Filter based on trend direction and confidence
             if (!ShouldAnalyze(data.TrendAnalysis))
             {
@@ -74,7 +99,7 @@ public class ShortTermPutStrategy : IStrategy
                     break;
 
                 var recommendation = await AnalyzePutOptionAsync(
-                    data, option, cancellationToken);
+                    data, option, healthMetrics, cancellationToken);
 
                 if (recommendation != null)
                 {
@@ -86,7 +111,7 @@ public class ShortTermPutStrategy : IStrategy
             var topRecommendations = recommendations
                 .OrderByDescending(r => r.Confidence)
                 .ThenBy(r => r.DaysToExpiry)
-                .Take(3) // Top 3 recommendations per symbol
+                .Take(1) // Top 1 recommendation per symbol (only best opportunity)
                 .ToList();
 
             if (topRecommendations.Any())
@@ -120,6 +145,7 @@ public class ShortTermPutStrategy : IStrategy
     private Task<PutRecommendation?> AnalyzePutOptionAsync(
         AggregatedMarketData data,
         OptionContract option,
+        FinancialHealthMetrics healthMetrics,
         CancellationToken cancellationToken)
     {
         return Task.Run(() =>
@@ -141,6 +167,13 @@ public class ShortTermPutStrategy : IStrategy
 
                 // Skip if strike is too far from current price (more than 20% OTM)
                 if (safetyMargin > 0.20m)
+                {
+                    return null;
+                }
+
+                // Skip if delta is too high (closer to ITM, more risky)
+                // For PUT options, delta is negative; -0.30 is safer than -0.40
+                if (option.Delta < -0.30m)
                 {
                     return null;
                 }
@@ -183,7 +216,13 @@ public class ShortTermPutStrategy : IStrategy
                     ExpectedGrowthPercent = trendAnalysis.ExpectedGrowthPercent,
                     StrategyName = Name,
                     ScannedAt = DateTime.UtcNow,
-                    IsActive = true
+                    IsActive = true,
+                    PiotroskiFScore = healthMetrics.PiotroskiFScore,
+                    AltmanZScore = healthMetrics.AltmanZScore,
+                    ExanteSymbol = option.ExanteSymbol,
+                    OptionPrice = option.Ask,
+                    Volume = option.Volume,
+                    OpenInterest = option.OpenInterest
                 };
             }
             catch (Exception ex)

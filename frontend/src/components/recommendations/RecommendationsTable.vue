@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { format } from 'date-fns'
-import { ArrowUpIcon, ArrowDownIcon } from '@heroicons/vue/24/solid'
+import { ArrowUpIcon, ArrowDownIcon, CalculatorIcon, InformationCircleIcon } from '@heroicons/vue/24/solid'
 import type { PutRecommendation } from '@/types'
 import { ref, computed } from 'vue'
+import Modal from '@/components/common/Modal.vue'
+import ProfitCalculator from '@/components/charts/ProfitCalculator.vue'
+import ScoreDetailsModal from './ScoreDetailsModal.vue'
 
 const props = defineProps<{
   recommendations: PutRecommendation[]
 }>()
 
-type SortKey = 'symbol' | 'confidence' | 'daysToExpiry' | 'premium' | 'expectedGrowthPercent'
+type SortKey = 'symbol' | 'confidence' | 'daysToExpiry' | 'premium' | 'expectedGrowthPercent' | 'piotroskiFScore' | 'altmanZScore'
 type SortDirection = 'asc' | 'desc'
 
 const sortKey = ref<SortKey>('confidence')
 const sortDirection = ref<SortDirection>('desc')
+const showCalculator = ref(false)
+const showScoreDetails = ref(false)
+const selectedRecommendation = ref<PutRecommendation | null>(null)
 
 const sortedRecommendations = computed(() => {
   return [...props.recommendations].sort((a, b) => {
@@ -45,6 +51,26 @@ function getConfidenceClass(confidence: number): string {
 
 function formatDate(dateStr: string): string {
   return format(new Date(dateStr), 'MMM dd, yyyy')
+}
+
+function openCalculator(recommendation: PutRecommendation) {
+  selectedRecommendation.value = recommendation
+  showCalculator.value = true
+}
+
+function closeCalculator() {
+  showCalculator.value = false
+  selectedRecommendation.value = null
+}
+
+function openScoreDetails(recommendation: PutRecommendation) {
+  selectedRecommendation.value = recommendation
+  showScoreDetails.value = true
+}
+
+function closeScoreDetails() {
+  showScoreDetails.value = false
+  selectedRecommendation.value = null
 }
 </script>
 
@@ -89,6 +115,18 @@ function formatDate(dateStr: string): string {
                 />
               </div>
             </th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Exante Symbol
+            </th>
+            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Option Price
+            </th>
+            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Volume
+            </th>
+            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Open Int.
+            </th>
             <th
               @click="toggleSort('daysToExpiry')"
               class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -116,6 +154,32 @@ function formatDate(dateStr: string): string {
               </div>
             </th>
             <th
+              @click="toggleSort('piotroskiFScore')"
+              class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+            >
+              <div class="flex items-center justify-center gap-1">
+                F-Score
+                <component
+                  v-if="sortKey === 'piotroskiFScore'"
+                  :is="sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon"
+                  class="h-3 w-3"
+                />
+              </div>
+            </th>
+            <th
+              @click="toggleSort('altmanZScore')"
+              class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+            >
+              <div class="flex items-center justify-center gap-1">
+                Z-Score
+                <component
+                  v-if="sortKey === 'altmanZScore'"
+                  :is="sortDirection === 'asc' ? ArrowUpIcon : ArrowDownIcon"
+                  class="h-3 w-3"
+                />
+              </div>
+            </th>
+            <th
               @click="toggleSort('confidence')"
               class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
             >
@@ -127,6 +191,9 @@ function formatDate(dateStr: string): string {
                   class="h-3 w-3"
                 />
               </div>
+            </th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Actions
             </th>
           </tr>
         </thead>
@@ -151,12 +218,36 @@ function formatDate(dateStr: string): string {
             <td class="px-6 py-4 whitespace-nowrap text-right">
               <span class="text-sm font-medium text-green-600">${{ rec.premium.toFixed(2) }}</span>
             </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span v-if="rec.exanteSymbol" class="text-xs text-gray-600 font-mono">{{ rec.exanteSymbol }}</span>
+              <span v-else class="text-xs text-gray-400">-</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right">
+              <span v-if="rec.optionPrice" class="text-sm text-blue-600">${{ rec.optionPrice.toFixed(2) }}</span>
+              <span v-else class="text-sm text-gray-400">-</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right">
+              <span v-if="rec.volume !== undefined" class="text-sm text-gray-700">{{ rec.volume.toLocaleString() }}</span>
+              <span v-else class="text-sm text-gray-400">-</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right">
+              <span v-if="rec.openInterest !== undefined" class="text-sm text-gray-700">{{ rec.openInterest.toLocaleString() }}</span>
+              <span v-else class="text-sm text-gray-400">-</span>
+            </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
               <div class="text-sm text-gray-900">{{ formatDate(rec.expiry) }}</div>
               <div class="text-xs text-gray-500">{{ rec.daysToExpiry }}d</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
               <span class="text-sm font-medium text-green-600">+{{ rec.expectedGrowthPercent.toFixed(1) }}%</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-center">
+              <span v-if="rec.piotroskiFScore !== undefined" class="text-sm text-gray-900">{{ rec.piotroskiFScore }}</span>
+              <span v-else class="text-sm text-gray-400">-</span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-center">
+              <span v-if="rec.altmanZScore !== undefined" class="text-sm text-gray-900">{{ rec.altmanZScore.toFixed(2) }}</span>
+              <span v-else class="text-sm text-gray-400">-</span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
               <span
@@ -168,14 +259,51 @@ function formatDate(dateStr: string): string {
                 {{ (rec.confidence * 100).toFixed(0) }}%
               </span>
             </td>
+            <td class="px-6 py-4 whitespace-nowrap text-center">
+              <div class="flex items-center justify-center gap-2">
+                <button
+                  @click="openCalculator(rec)"
+                  class="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  title="Calculate profit/loss"
+                >
+                  <CalculatorIcon class="h-4 w-4" />
+                </button>
+                <button
+                  @click="openScoreDetails(rec)"
+                  class="inline-flex items-center gap-1 px-2 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors"
+                  title="View score details"
+                >
+                  <InformationCircleIcon class="h-4 w-4" />
+                </button>
+              </div>
+            </td>
           </tr>
           <tr v-if="!recommendations.length">
-            <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+            <td colspan="15" class="px-6 py-12 text-center text-gray-500">
               No recommendations found
             </td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <!-- Calculator Modal -->
+    <Modal
+      :open="showCalculator"
+      :title="`Profit Calculator - ${selectedRecommendation?.symbol || ''}`"
+      @close="closeCalculator"
+    >
+      <ProfitCalculator
+        v-if="selectedRecommendation"
+        :recommendation="selectedRecommendation"
+      />
+    </Modal>
+
+    <!-- Score Details Modal -->
+    <ScoreDetailsModal
+      :open="showScoreDetails"
+      :recommendation="selectedRecommendation"
+      @close="closeScoreDetails"
+    />
   </div>
 </template>

@@ -43,4 +43,22 @@ public class PutRecommendation
 
     [Column]
     public bool IsActive { get; set; } = true;
+
+    [Column]
+    public decimal? PiotroskiFScore { get; set; }
+
+    [Column]
+    public decimal? AltmanZScore { get; set; }
+
+    [Column]
+    public string? ExanteSymbol { get; set; }
+
+    [Column]
+    public decimal? OptionPrice { get; set; }
+
+    [Column]
+    public int? Volume { get; set; }
+
+    [Column]
+    public int? OpenInterest { get; set; }
 }

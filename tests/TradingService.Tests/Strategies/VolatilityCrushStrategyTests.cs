@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using TradingService.Configuration;
 using TradingService.Models;
 using TradingService.Services.Strategies;
+using TradingService.Services.Interfaces;
 
 namespace TradingService.Tests.Strategies;
 
@@ -10,10 +11,26 @@ public class VolatilityCrushStrategyTests
 {
     private readonly VolatilityCrushStrategy _strategy;
     private readonly Mock<ILogger<VolatilityCrushStrategy>> _loggerMock;
+    private readonly Mock<IFinancialHealthService> _financialHealthServiceMock;
 
     public VolatilityCrushStrategyTests()
     {
         _loggerMock = new Mock<ILogger<VolatilityCrushStrategy>>();
+        _financialHealthServiceMock = new Mock<IFinancialHealthService>();
+
+        // Setup mock to return healthy metrics by default
+        _financialHealthServiceMock
+            .Setup(x => x.CalculateMetricsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FinancialHealthMetrics
+            {
+                PiotroskiFScore = 8m,
+                AltmanZScore = 3.5m
+            });
+
+        _financialHealthServiceMock
+            .Setup(x => x.MeetsHealthRequirements(It.IsAny<FinancialHealthMetrics>()))
+            .Returns(true);
+
         var appSettings = Options.Create(new AppSettings
         {
             Strategy = new StrategySettings
@@ -24,7 +41,7 @@ public class VolatilityCrushStrategyTests
             }
         });
 
-        _strategy = new VolatilityCrushStrategy(_loggerMock.Object, appSettings);
+        _strategy = new VolatilityCrushStrategy(_loggerMock.Object, appSettings, _financialHealthServiceMock.Object);
     }
 
     [Fact]

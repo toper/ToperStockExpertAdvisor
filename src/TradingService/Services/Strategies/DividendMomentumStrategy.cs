@@ -10,14 +10,16 @@ namespace TradingService.Services.Strategies;
 /// <summary>
 /// Dividend Momentum strategy focusing on dividend-paying stocks with positive momentum
 /// Targets stocks with stable dividends and upward price trends for conservative PUT selling
+/// Filters by Piotroski F-Score and Altman Z-Score for financial health
 /// </summary>
 public class DividendMomentumStrategy : IStrategy
 {
     private readonly ILogger<DividendMomentumStrategy> _logger;
     private readonly StrategySettings _settings;
+    private readonly IFinancialHealthService _financialHealthService;
 
     public string Name => "DividendMomentum";
-    public string Description => "Conservative PUT selling on dividend stocks with positive momentum";
+    public string Description => "Conservative PUT selling on financially healthy dividend stocks with positive momentum";
     public int TargetExpiryMinDays => _settings.MinExpiryDays;
     public int TargetExpiryMaxDays => _settings.MaxExpiryDays;
 
@@ -28,10 +30,12 @@ public class DividendMomentumStrategy : IStrategy
 
     public DividendMomentumStrategy(
         ILogger<DividendMomentumStrategy> logger,
-        IOptions<AppSettings> appSettings)
+        IOptions<AppSettings> appSettings,
+        IFinancialHealthService financialHealthService)
     {
         _logger = logger;
         _settings = appSettings.Value.Strategy;
+        _financialHealthService = financialHealthService;
     }
 
     public async Task<IEnumerable<PutRecommendation>> AnalyzeAsync(
@@ -49,6 +53,27 @@ public class DividendMomentumStrategy : IStrategy
             }
 
             var symbol = data.MarketData!.Symbol;
+
+            // FIRST: Check financial health (Piotroski F-Score & Altman Z-Score)
+            _logger.LogInformation("Checking financial health for {Symbol}", symbol);
+            var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
+
+            if (!_financialHealthService.MeetsHealthRequirements(healthMetrics))
+            {
+                _logger.LogInformation(
+                    "Skipping {Symbol} - Does not meet financial health requirements. " +
+                    "F-Score: {FScore}, Z-Score: {ZScore}",
+                    symbol,
+                    healthMetrics.PiotroskiFScore?.ToString("F1") ?? "N/A",
+                    healthMetrics.AltmanZScore?.ToString("F2") ?? "N/A");
+                return recommendations;
+            }
+
+            _logger.LogInformation(
+                "{Symbol} passes financial health check - F-Score: {FScore}, Z-Score: {ZScore}",
+                symbol,
+                healthMetrics.PiotroskiFScore,
+                healthMetrics.AltmanZScore);
 
             // Check dividend criteria
             if (!MeetsDividendCriteria(data.DividendInfo))
@@ -76,7 +101,7 @@ public class DividendMomentumStrategy : IStrategy
                     break;
 
                 var recommendation = await AnalyzeDividendPutOptionAsync(
-                    data, option, momentumScore, cancellationToken);
+                    data, option, momentumScore, healthMetrics, cancellationToken);
 
                 if (recommendation != null)
                 {
@@ -89,7 +114,7 @@ public class DividendMomentumStrategy : IStrategy
                 .Where(r => r.Confidence >= _settings.MinConfidence + 0.05m) // Higher threshold
                 .OrderByDescending(r => r.Confidence)
                 .ThenBy(r => r.DaysToExpiry)
-                .Take(2) // Fewer, higher-quality recommendations
+                .Take(1) // Only best recommendation per symbol
                 .ToList();
 
             if (topRecommendations.Any())
@@ -226,6 +251,7 @@ public class DividendMomentumStrategy : IStrategy
         AggregatedMarketData data,
         OptionContract option,
         decimal momentumScore,
+        FinancialHealthMetrics healthMetrics,
         CancellationToken cancellationToken)
     {
         return Task.Run(() =>
@@ -295,7 +321,13 @@ public class DividendMomentumStrategy : IStrategy
                     ExpectedGrowthPercent = data.TrendAnalysis!.ExpectedGrowthPercent,
                     StrategyName = Name,
                     ScannedAt = DateTime.UtcNow,
-                    IsActive = true
+                    IsActive = true,
+                    PiotroskiFScore = healthMetrics.PiotroskiFScore,
+                    AltmanZScore = healthMetrics.AltmanZScore,
+                    ExanteSymbol = option.ExanteSymbol,
+                    OptionPrice = option.Ask,
+                    Volume = option.Volume,
+                    OpenInterest = option.OpenInterest
                 };
             }
             catch (Exception ex)

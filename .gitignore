@@ -100,7 +100,6 @@ StyleCopReport.xml
 
 # Chutzpah Test files
 _Chutzpah*
-CLAUDE.md
 
 # Visual C++ cache files
 ipch/
@@ -267,6 +266,11 @@ ServiceFabricBackup/
 *.ldf
 *.ndf
 
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
 # Business Intelligence projects
 *.rdl.data
 *.bim.layout
@@ -375,3 +379,4 @@ FodyWeavers.xsd
 /.claude
 /nul
 /PLAN.md
+/CLAUDE.md
