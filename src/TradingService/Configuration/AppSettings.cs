@@ -200,7 +200,8 @@ public class SimFinSettings
     /// SimFin API key (get from https://simfin.com/)
     /// </summary>
     [Required]
-    public string ApiKey { get; set; } = string.Empty;
+    [MinLength(1)]
+    public string ApiKey { get; set; } = null!;
 
     /// <summary>
     /// Request timeout in seconds
