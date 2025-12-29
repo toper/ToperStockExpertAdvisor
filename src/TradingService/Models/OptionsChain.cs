@@ -10,6 +10,7 @@ public record OptionsChain
 public record OptionContract
 {
     public string Symbol { get; init; } = string.Empty;
+    public string? ExanteSymbol { get; init; }
     public decimal Strike { get; init; }
     public DateTime Expiry { get; init; }
     public int DaysToExpiry => (int)(Expiry - DateTime.Today).TotalDays;
@@ -17,7 +18,8 @@ public record OptionContract
     public decimal Ask { get; init; }
     public decimal Mid => (Bid + Ask) / 2;
     public decimal ImpliedVolatility { get; init; }
-    public decimal OpenInterest { get; init; }
+    public int? Volume { get; init; }
+    public int? OpenInterest { get; init; }
     public decimal Delta { get; init; }
     public decimal Theta { get; init; }
 }

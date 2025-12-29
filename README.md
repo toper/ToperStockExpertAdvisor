@@ -199,6 +199,16 @@ npm run dev
 
 Wymaga lokalnego Consul: http://localhost:8500
 
+## CI/CD & Docker Images
+
+Projekt jest skonfigurowany z GitHub Actions do automatycznego budowania i publikowania obrazów Docker do prywatnego Nexus registry przy każdym pushu.
+
+**Dostępne obrazy na Nexus (`dockerhub.toper.pl`):**
+- `dockerhub.toper.pl/toper-stock-api:latest` - REST API + Ocelot Gateway
+- `dockerhub.toper.pl/toper-stock-worker:latest` - Worker Service (Scanner)
+- `dockerhub.toper.pl/toper-stock-frontend:latest` - Vue.js Frontend
+
+
 ## Licencja
 
 GNU GENERAL PUBLIC LICENSE Version 3, 29 June 2007

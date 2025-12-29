@@ -8,20 +8,67 @@ using YahooQuotesApi;
 namespace TradingService.Services.Integrations;
 
 /// <summary>
-/// Options data provider using Yahoo Finance API as primary source
-/// Can be extended to use Exante API when credentials are configured
+/// Options data provider using Exante API for real options data
+/// Falls back to Yahoo Finance for current stock prices
 /// </summary>
 public class ExanteDataProvider : IOptionsDataProvider
 {
     private readonly ILogger<ExanteDataProvider> _logger;
     private readonly AppSettings _appSettings;
+    private readonly HttpClient _httpClient;
+    private readonly ExanteAuthService? _authService;
+    private readonly bool _isSimulationMode;
 
     public ExanteDataProvider(
         ILogger<ExanteDataProvider> logger,
-        IOptions<AppSettings> appSettings)
+        IOptions<AppSettings> appSettings,
+        IHttpClientFactory httpClientFactory,
+        ExanteAuthService? authService = null)
     {
         _logger = logger;
         _appSettings = appSettings.Value;
+        _authService = authService;
+        _isSimulationMode = string.IsNullOrEmpty(_appSettings.Broker.Exante.ApiKey);
+
+        // Use named HttpClient with Polly retry policies
+        _httpClient = httpClientFactory.CreateClient("ExanteApi");
+
+        _logger.LogInformation(
+            "ExanteDataProvider initialized - Mode: {Mode}, Auth: {Auth}",
+            _isSimulationMode ? "Simulation (Synthetic Data)" : "Live (Exante API)",
+            _authService != null ? "Managed" : "Manual");
+    }
+
+    private async Task ConfigureAuthenticationAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isSimulationMode)
+            return;
+
+        // Use ExanteAuthService for automatic token management if available
+        if (_authService != null)
+        {
+            var success = await _authService.ConfigureClientAuthenticationAsync(_httpClient, cancellationToken);
+            if (!success)
+            {
+                _logger.LogWarning("Failed to configure authentication via ExanteAuthService");
+            }
+        }
+        else
+        {
+            // Fallback to manual Basic authentication (legacy)
+            if (!string.IsNullOrEmpty(_appSettings.Broker.Exante.ApiKey))
+            {
+                var credentials = Convert.ToBase64String(
+                    System.Text.Encoding.UTF8.GetBytes($"{_appSettings.Broker.Exante.ApiKey}:{_appSettings.Broker.Exante.ApiSecret}"));
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+                _logger.LogDebug("Using Basic authentication (manual)");
+            }
+        }
+
+        _httpClient.DefaultRequestHeaders.Accept.Clear();
+        _httpClient.DefaultRequestHeaders.Accept.Add(
+            new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
     }
 
     public async Task<OptionsChain?> GetOptionsChainAsync(string symbol)
@@ -48,16 +95,31 @@ public class ExanteDataProvider : IOptionsDataProvider
                 return null;
             }
 
-            // Generate synthetic options data for testing
-            // TODO: Replace with actual Exante API when credentials are available
-            var putOptions = GenerateSyntheticPutOptions(symbol, (decimal)currentPrice);
-            var callOptions = GenerateSyntheticCallOptions(symbol, (decimal)currentPrice);
+            // Use simulation mode if no API credentials configured
+            if (_isSimulationMode)
+            {
+                _logger.LogWarning("Simulation mode - generating synthetic options for {Symbol}", symbol);
+                var putOptions = GenerateSyntheticPutOptions(symbol, (decimal)currentPrice);
+                var callOptions = GenerateSyntheticCallOptions(symbol, (decimal)currentPrice);
+
+                return new OptionsChain
+                {
+                    UnderlyingSymbol = symbol,
+                    PutOptions = putOptions,
+                    CallOptions = callOptions
+                };
+            }
+
+            // REAL MODE: Fetch options from Exante API
+            await ConfigureAuthenticationAsync();
+            var realPutOptions = await FetchExanteOptionsAsync(symbol, "PUT", (decimal)currentPrice);
+            var realCallOptions = await FetchExanteOptionsAsync(symbol, "CALL", (decimal)currentPrice);
 
             return new OptionsChain
             {
                 UnderlyingSymbol = symbol,
-                PutOptions = putOptions,
-                CallOptions = callOptions
+                PutOptions = realPutOptions,
+                CallOptions = realCallOptions
             };
         }
         catch (Exception ex)
@@ -111,6 +173,168 @@ public class ExanteDataProvider : IOptionsDataProvider
         }
     }
 
+    #region Real Exante API Methods
+
+    private async Task<IReadOnlyList<OptionContract>> FetchExanteOptionsAsync(string symbol, string optionType, decimal currentPrice)
+    {
+        try
+        {
+            _logger.LogInformation("Fetching {OptionType} options for {Symbol} from Exante API", optionType, symbol);
+
+            // Fetch all options from Exante (this is slow but necessary)
+            var response = await _httpClient.GetAsync(
+                "/md/3.0/types/OPTION",
+                HttpCompletionOption.ResponseHeadersRead);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Exante API returned {StatusCode}: {Reason}",
+                    response.StatusCode, response.ReasonPhrase);
+                return Array.Empty<OptionContract>();
+            }
+
+            var options = new List<OptionContract>();
+            await using var stream = await response.Content.ReadAsStreamAsync();
+
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var symbols = System.Text.Json.JsonSerializer.DeserializeAsyncEnumerable<ExanteSymbolResponse>(
+                stream,
+                jsonOptions);
+
+            var targetExchanges = new HashSet<string> { "NASDAQ", "NYSE", "AMEX", "ARCA" };
+
+            await foreach (var exanteSymbol in symbols)
+            {
+                if (exanteSymbol == null || exanteSymbol.OptionData == null)
+                    continue;
+
+                // Parse underlying symbol
+                var underlying = exanteSymbol.Ticker;
+                if (string.IsNullOrEmpty(underlying) && !string.IsNullOrEmpty(exanteSymbol.UnderlyingSymbolId))
+                {
+                    var parts = exanteSymbol.UnderlyingSymbolId.Split('.');
+                    underlying = parts.Length > 0 ? parts[0] : null;
+
+                    // Filter by exchange
+                    if (parts.Length > 1 && !targetExchanges.Contains(parts[1]))
+                        continue;
+                }
+
+                // Filter to specific symbol and option type
+                if (!string.Equals(underlying, symbol, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!string.Equals(exanteSymbol.OptionData.OptionRight, optionType, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Parse strike and expiry
+                if (!decimal.TryParse(exanteSymbol.OptionData.StrikePrice, out var strike))
+                    continue;
+
+                if (!exanteSymbol.Expiration.HasValue)
+                    continue;
+
+                var expiry = DateTimeOffset.FromUnixTimeMilliseconds(exanteSymbol.Expiration.Value).DateTime;
+
+                // Fetch quotes for this option to get bid/ask/volume/open interest
+                var quotes = await FetchOptionQuotesAsync(exanteSymbol.SymbolId!);
+
+                if (quotes == null)
+                    continue; // Skip options without quotes
+
+                var daysToExpiry = (int)(expiry - DateTime.Today).TotalDays;
+                var iv = CalculateImpliedVolatility(quotes.Bid ?? 0, quotes.Ask ?? 0, strike, expiry);
+
+                options.Add(new OptionContract
+                {
+                    Symbol = exanteSymbol.SymbolId!,
+                    ExanteSymbol = exanteSymbol.SymbolId,
+                    Strike = strike,
+                    Expiry = expiry,
+                    Bid = quotes.Bid ?? 0,
+                    Ask = quotes.Ask ?? 0,
+                    ImpliedVolatility = iv,
+                    Volume = quotes.Volume,
+                    OpenInterest = quotes.OpenInterest,
+                    Delta = CalculateSyntheticDelta(currentPrice, strike, daysToExpiry, iv, optionType == "PUT"),
+                    Theta = CalculateSyntheticTheta(currentPrice, strike, daysToExpiry, iv, optionType == "PUT")
+                });
+
+                if (options.Count >= 100) // Limit to avoid too many options
+                    break;
+            }
+
+            _logger.LogInformation("Fetched {Count} {OptionType} options for {Symbol}", options.Count, optionType, symbol);
+            return options;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching {OptionType} options for {Symbol} from Exante", optionType, symbol);
+            return Array.Empty<OptionContract>();
+        }
+    }
+
+    private async Task<ExanteQuoteResponse?> FetchOptionQuotesAsync(string symbolId)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"/md/3.0/quotes/{symbolId}");
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var content = await response.Content.ReadAsStringAsync();
+            var quote = System.Text.Json.JsonSerializer.Deserialize<ExanteQuoteResponse>(content,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            return quote;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private decimal CalculateImpliedVolatility(decimal bid, decimal ask, decimal strike, DateTime expiry)
+    {
+        // Simplified IV calculation based on mid price
+        var mid = (bid + ask) / 2;
+        if (mid == 0) return 0.20m; // Default 20%
+
+        var daysToExpiry = Math.Max(1, (expiry - DateTime.Today).Days);
+        var timeToExpiry = daysToExpiry / 365m;
+
+        // Rough approximation: IV ≈ (optionPrice / strike) / sqrt(timeToExpiry)
+        var iv = (mid / strike) / (decimal)Math.Sqrt((double)timeToExpiry);
+        return Math.Min(2m, Math.Max(0.05m, iv)); // Clamp between 5% and 200%
+    }
+
+    // DTOs for Exante API
+    private class ExanteSymbolResponse
+    {
+        public string? SymbolId { get; set; }
+        public string? Ticker { get; set; }
+        public string? UnderlyingSymbolId { get; set; }
+        public long? Expiration { get; set; }
+        public ExanteOptionData? OptionData { get; set; }
+    }
+
+    private class ExanteOptionData
+    {
+        public string? OptionRight { get; set; } // "PUT" or "CALL"
+        public string? StrikePrice { get; set; }
+    }
+
+    private class ExanteQuoteResponse
+    {
+        public decimal? Bid { get; set; }
+        public decimal? Ask { get; set; }
+        public int? Volume { get; set; }
+        public int? OpenInterest { get; set; }
+    }
+
+    #endregion
+
     #region Synthetic Options Generation (for testing/development)
 
     /// <summary>
@@ -143,15 +367,22 @@ public class ExanteDataProvider : IOptionsDataProvider
                 var theta = CalculateSyntheticTheta(
                     currentPrice, strike, daysToExpiry, impliedVol, true);
 
+                // Generate Exante-style symbol: SYMBOL.EXCHANGE_YYMMDD_P_STRIKE
+                var exanteSymbol = $"{symbol}.NASDAQ_{expiry:yyMMdd}_P_{(int)strike}";
+                var volume = Random.Shared.Next(5, 500);
+                var openInterest = Random.Shared.Next(10, 1000);
+
                 options.Add(new OptionContract
                 {
                     Symbol = $"{symbol}{expiry:yyMMdd}P{strike:00000}",
+                    ExanteSymbol = exanteSymbol,
                     Strike = strike,
                     Expiry = expiry,
                     Bid = bid,
                     Ask = ask,
                     ImpliedVolatility = impliedVol,
-                    OpenInterest = Random.Shared.Next(10, 1000),
+                    Volume = volume,
+                    OpenInterest = openInterest,
                     Delta = delta,
                     Theta = theta
                 });
@@ -190,15 +421,22 @@ public class ExanteDataProvider : IOptionsDataProvider
                 var theta = CalculateSyntheticTheta(
                     currentPrice, strike, daysToExpiry, impliedVol, false);
 
+                // Generate Exante-style symbol: SYMBOL.EXCHANGE_YYMMDD_C_STRIKE
+                var exanteSymbol = $"{symbol}.NASDAQ_{expiry:yyMMdd}_C_{(int)strike}";
+                var volume = Random.Shared.Next(5, 500);
+                var openInterest = Random.Shared.Next(10, 1000);
+
                 options.Add(new OptionContract
                 {
                     Symbol = $"{symbol}{expiry:yyMMdd}C{strike:00000}",
+                    ExanteSymbol = exanteSymbol,
                     Strike = strike,
                     Expiry = expiry,
                     Bid = bid,
                     Ask = ask,
                     ImpliedVolatility = impliedVol,
-                    OpenInterest = Random.Shared.Next(10, 1000),
+                    Volume = volume,
+                    OpenInterest = openInterest,
                     Delta = delta,
                     Theta = theta
                 });

@@ -4,12 +4,14 @@ import type { PutRecommendation } from '@/types'
 import RecommendationCard from './RecommendationCard.vue'
 import Modal from '@/components/common/Modal.vue'
 import ProfitCalculator from '@/components/charts/ProfitCalculator.vue'
+import ScoreDetailsModal from './ScoreDetailsModal.vue'
 
 defineProps<{
   recommendations: PutRecommendation[]
 }>()
 
 const showCalculator = ref(false)
+const showScoreDetails = ref(false)
 const selectedRecommendation = ref<PutRecommendation | null>(null)
 
 function openCalculator(recommendation: PutRecommendation) {
@@ -19,6 +21,16 @@ function openCalculator(recommendation: PutRecommendation) {
 
 function closeCalculator() {
   showCalculator.value = false
+  selectedRecommendation.value = null
+}
+
+function openScoreDetails(recommendation: PutRecommendation) {
+  selectedRecommendation.value = recommendation
+  showScoreDetails.value = true
+}
+
+function closeScoreDetails() {
+  showScoreDetails.value = false
   selectedRecommendation.value = null
 }
 </script>
@@ -31,6 +43,7 @@ function closeCalculator() {
         :key="rec.id"
         :recommendation="rec"
         @calculate="openCalculator"
+        @view-details="openScoreDetails"
       />
       <div
         v-if="!recommendations.length"
@@ -51,5 +64,12 @@ function closeCalculator() {
         :recommendation="selectedRecommendation"
       />
     </Modal>
+
+    <!-- Score Details Modal -->
+    <ScoreDetailsModal
+      :open="showScoreDetails"
+      :recommendation="selectedRecommendation"
+      @close="closeScoreDetails"
+    />
   </div>
 </template>

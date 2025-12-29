@@ -134,6 +134,17 @@ try
             })
             .AddStandardResilienceHandler(options =>
             {
+                // Configure timeout per attempt (default 10s is too short for Exante API)
+                var attemptTimeout = TimeSpan.FromSeconds(rateLimitSettings.AttemptTimeoutSeconds);
+                options.AttemptTimeout.Timeout = attemptTimeout;
+
+                // Configure total request timeout (must be > attempt timeout)
+                // Allow enough time for all retry attempts (60s × 3 retries + buffers)
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
+
+                // Configure circuit breaker sampling duration (must be >= 2 × attempt timeout)
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(attemptTimeout.TotalSeconds * 2);
+
                 // Configure retry strategy for HTTP 429 and transient errors
                 options.Retry.MaxRetryAttempts = rateLimitSettings.MaxRetries;
                 options.Retry.Delay = TimeSpan.FromSeconds(rateLimitSettings.InitialRetryDelaySeconds);
@@ -165,11 +176,12 @@ try
                 };
             });
 
-            logger.Info("Configured Polly retry policy: Enabled={0}, MaxRetries={1}, InitialDelay={2}s, Exponential={3}",
+            logger.Info("Configured Polly retry policy: Enabled={0}, MaxRetries={1}, InitialDelay={2}s, Exponential={3}, AttemptTimeout={4}s",
                 rateLimitSettings.EnableRetryOn429,
                 rateLimitSettings.MaxRetries,
                 rateLimitSettings.InitialRetryDelaySeconds,
-                rateLimitSettings.UseExponentialBackoff);
+                rateLimitSettings.UseExponentialBackoff,
+                rateLimitSettings.AttemptTimeoutSeconds);
 
             // Exante Authentication Service (manages JWT token refresh)
             services.AddSingleton(sp =>

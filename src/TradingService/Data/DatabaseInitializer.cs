@@ -34,5 +34,41 @@ public static class DatabaseInitializer
         {
             await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN AltmanZScore DECIMAL NULL");
         }
+
+        // Check if ExanteSymbol column exists in Recommendations table
+        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='ExanteSymbol'";
+        var exanteSymbolExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
+
+        if (!exanteSymbolExists)
+        {
+            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN ExanteSymbol TEXT NULL");
+        }
+
+        // Check if OptionPrice column exists in Recommendations table
+        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='OptionPrice'";
+        var optionPriceExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
+
+        if (!optionPriceExists)
+        {
+            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN OptionPrice DECIMAL NULL");
+        }
+
+        // Check if Volume column exists in Recommendations table
+        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='Volume'";
+        var volumeExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
+
+        if (!volumeExists)
+        {
+            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN Volume INTEGER NULL");
+        }
+
+        // Check if OpenInterest column exists in Recommendations table
+        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='OpenInterest'";
+        var openInterestExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
+
+        if (!openInterestExists)
+        {
+            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN OpenInterest INTEGER NULL");
+        }
     }
 }

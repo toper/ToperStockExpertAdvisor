@@ -323,7 +323,11 @@ public class DividendMomentumStrategy : IStrategy
                     ScannedAt = DateTime.UtcNow,
                     IsActive = true,
                     PiotroskiFScore = healthMetrics.PiotroskiFScore,
-                    AltmanZScore = healthMetrics.AltmanZScore
+                    AltmanZScore = healthMetrics.AltmanZScore,
+                    ExanteSymbol = option.ExanteSymbol,
+                    OptionPrice = option.Ask,
+                    Volume = option.Volume,
+                    OpenInterest = option.OpenInterest
                 };
             }
             catch (Exception ex)

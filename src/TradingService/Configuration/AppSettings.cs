@@ -185,6 +185,12 @@ public class RateLimitingSettings
     /// Use exponential backoff (60s, 120s, 240s) instead of fixed delay
     /// </summary>
     public bool UseExponentialBackoff { get; set; } = true;
+
+    /// <summary>
+    /// Request timeout per attempt in seconds (for Polly resilience handler)
+    /// </summary>
+    [Range(10, 300)]
+    public int AttemptTimeoutSeconds { get; set; } = 60;
 }
 
 public class SimFinSettings
