@@ -13,7 +13,7 @@ namespace TradingService.Services.Integrations;
 /// Service for fetching financial data from SimFin Bulk Download API
 /// Downloads CSV files in ZIP format and parses them locally
 /// </summary>
-public class SimFinDataProvider
+public class SimFinDataProvider : ISimFinDataProvider
 {
     private readonly SimFinSettings _settings;
     private readonly ILogger<SimFinDataProvider> _logger;
@@ -76,6 +76,7 @@ public class SimFinDataProvider
 
     /// <summary>
     /// Fetches fundamental data for a given ticker symbol
+    /// Includes both current period and previous period (for year-over-year comparisons)
     /// </summary>
     public async Task<SimFinCompanyData?> GetCompanyDataAsync(
         string ticker,
@@ -88,17 +89,18 @@ public class SimFinDataProvider
             // Ensure we have the latest bulk data downloaded
             await EnsureBulkDataDownloadedAsync(cancellationToken);
 
-            // Parse CSV files and extract data for the ticker
-            var incomeData = await GetLatestDataFromCsvAsync<IncomeStatementCsv>(
+            // Parse CSV files and extract data for the ticker (current + previous period)
+            var incomeData = await GetHistoricalDataFromCsvAsync<IncomeStatementCsv>(
                 DATASET_INCOME, ticker, cancellationToken);
-            var balanceData = await GetLatestDataFromCsvAsync<BalanceSheetCsv>(
+            var balanceData = await GetHistoricalDataFromCsvAsync<BalanceSheetCsv>(
                 DATASET_BALANCE, ticker, cancellationToken);
-            var cashflowData = await GetLatestDataFromCsvAsync<CashFlowCsv>(
+            var cashflowData = await GetHistoricalDataFromCsvAsync<CashFlowCsv>(
                 DATASET_CASHFLOW, ticker, cancellationToken);
 
-            if (incomeData == null && balanceData == null)
+            if ((incomeData.Current == null && balanceData.Current == null) ||
+                (incomeData.Previous == null && balanceData.Previous == null))
             {
-                _logger.LogWarning("No financial data found for {Ticker} in SimFin bulk data", ticker);
+                _logger.LogWarning("Insufficient historical data for {Ticker} in SimFin bulk data (need at least 2 periods)", ticker);
                 return null;
             }
 
@@ -109,9 +111,12 @@ public class SimFinDataProvider
                     Ticker = ticker,
                     CompanyName = ticker // CSV doesn't have company name in statements
                 },
-                BalanceSheet = MapBalanceSheet(balanceData),
-                IncomeStatement = MapIncomeStatement(incomeData),
-                CashFlow = MapCashFlow(cashflowData)
+                BalanceSheet = MapBalanceSheet(balanceData.Current),
+                IncomeStatement = MapIncomeStatement(incomeData.Current),
+                CashFlow = MapCashFlow(cashflowData.Current),
+                PreviousBalanceSheet = MapBalanceSheet(balanceData.Previous),
+                PreviousIncomeStatement = MapIncomeStatement(incomeData.Previous),
+                PreviousCashFlow = MapCashFlow(cashflowData.Previous)
             };
         }
         catch (Exception ex)
@@ -210,9 +215,10 @@ public class SimFinDataProvider
     }
 
     /// <summary>
-    /// Gets latest data from CSV file for a specific ticker
+    /// Gets historical data (current + previous period) from CSV file for a specific ticker
+    /// Returns the two most recent quarterly reports for year-over-year comparison
     /// </summary>
-    private async Task<T?> GetLatestDataFromCsvAsync<T>(
+    private async Task<HistoricalData<T>> GetHistoricalDataFromCsvAsync<T>(
         string dataset,
         string ticker,
         CancellationToken cancellationToken) where T : CsvRecordBase
@@ -220,7 +226,7 @@ public class SimFinDataProvider
         var csvPath = GetCsvPath(dataset);
         if (!File.Exists(csvPath))
         {
-            return null;
+            return new HistoricalData<T>();
         }
 
         try
@@ -243,13 +249,19 @@ public class SimFinDataProvider
                 }
             }
 
-            // Return the most recent record (latest report date)
-            return records.OrderByDescending(r => r.ReportDate).FirstOrDefault();
+            // Sort by report date descending and take the 2 most recent periods
+            var sortedRecords = records.OrderByDescending(r => r.ReportDate).Take(2).ToList();
+
+            return new HistoricalData<T>
+            {
+                Current = sortedRecords.FirstOrDefault(),
+                Previous = sortedRecords.Skip(1).FirstOrDefault()
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error parsing {Dataset} CSV for {Ticker}", dataset, ticker);
-            return null;
+            return new HistoricalData<T>();
         }
     }
 
@@ -268,9 +280,12 @@ public class SimFinDataProvider
             TotalAssets = csv.TotalAssets,
             TotalCash = csv.CashEquivalentsShortTermInvestments,
             TotalDebt = totalDebt > 0 ? totalDebt : null,
+            LongTermDebt = csv.LongTermDebt, // Preserve long-term debt separately for Piotroski F5
             CurrentAssets = csv.TotalCurrentAssets,
             CurrentLiabilities = csv.TotalCurrentLiabilities,
-            TotalEquity = csv.TotalEquity
+            TotalEquity = csv.TotalEquity,
+            RetainedEarnings = csv.RetainedEarnings,
+            TotalLiabilities = csv.TotalLiabilities
         };
     }
 
@@ -298,6 +313,13 @@ public class SimFinDataProvider
             FinancingCashFlow = csv.NetCashFromFinancingActivities
         };
     }
+}
+
+// Helper class for holding historical data (current + previous period)
+public class HistoricalData<T> where T : CsvRecordBase
+{
+    public T? Current { get; set; }
+    public T? Previous { get; set; }
 }
 
 // CSV Record classes for CsvHelper
@@ -345,6 +367,12 @@ public class BalanceSheetCsv : CsvRecordBase
 
     [CsvHelper.Configuration.Attributes.Name("Total Equity")]
     public decimal? TotalEquity { get; set; }
+
+    [CsvHelper.Configuration.Attributes.Name("Retained Earnings")]
+    public decimal? RetainedEarnings { get; set; }
+
+    [CsvHelper.Configuration.Attributes.Name("Total Liabilities")]
+    public decimal? TotalLiabilities { get; set; }
 }
 
 public class CashFlowCsv : CsvRecordBase
@@ -359,13 +387,20 @@ public class CashFlowCsv : CsvRecordBase
     public decimal? NetCashFromFinancingActivities { get; set; }
 }
 
-// DTOs for SimFin API responses (same as before)
+// DTOs for SimFin API responses (includes historical data for YoY comparisons)
 public class SimFinCompanyData
 {
     public SimFinCompanyResponse CompanyInfo { get; set; } = new();
+
+    // Current period data
     public SimFinBalanceSheet? BalanceSheet { get; set; }
     public SimFinIncomeStatement? IncomeStatement { get; set; }
     public SimFinCashFlow? CashFlow { get; set; }
+
+    // Previous period data (for year-over-year comparisons)
+    public SimFinBalanceSheet? PreviousBalanceSheet { get; set; }
+    public SimFinIncomeStatement? PreviousIncomeStatement { get; set; }
+    public SimFinCashFlow? PreviousCashFlow { get; set; }
 }
 
 public class SimFinCompanyResponse
@@ -382,9 +417,12 @@ public class SimFinBalanceSheet
     public decimal? TotalAssets { get; set; }
     public decimal? TotalCash { get; set; }
     public decimal? TotalDebt { get; set; }
+    public decimal? LongTermDebt { get; set; } // For Piotroski F-Score criterion F5
     public decimal? CurrentAssets { get; set; }
     public decimal? CurrentLiabilities { get; set; }
     public decimal? TotalEquity { get; set; }
+    public decimal? RetainedEarnings { get; set; }
+    public decimal? TotalLiabilities { get; set; }
 }
 
 public class SimFinIncomeStatement

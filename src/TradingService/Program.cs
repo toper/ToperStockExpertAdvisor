@@ -185,7 +185,7 @@ try
             services.AddSingleton<IMarketDataAggregator, MarketDataAggregator>();
 
             // SimFin Data Provider
-            services.AddSingleton<SimFinDataProvider>();
+            services.AddSingleton<ISimFinDataProvider, SimFinDataProvider>();
 
             // Financial Health Service
             services.AddSingleton<IFinancialHealthService, FinancialHealthService>();
