@@ -66,7 +66,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix=sha-
+            type=raw,value={{date 'YYYYMMDD-HHmm'}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
@@ -83,3 +83,8 @@ jobs:
 
       - name: Image digest
         run: echo "Image published with digest ${{ steps.build-and-push.outputs.digest }}"
+
+      - name: Deployment info
+        run: |
+          echo "Images pushed to Nexus successfully!"
+          echo "Watchtower will automatically detect and deploy within 5 minutes"
