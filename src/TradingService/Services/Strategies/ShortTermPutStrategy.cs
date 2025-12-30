@@ -159,8 +159,8 @@ public class ShortTermPutStrategy : IStrategy
                 // Calculate safety margin (how far OTM the strike is)
                 var safetyMargin = (currentPrice - option.Strike) / currentPrice;
 
-                // Skip if strike is too close to current price (less than 5% OTM)
-                if (safetyMargin < 0.05m)
+                // Skip if strike is too close to current price (less than 3% OTM)
+                if (safetyMargin < 0.03m)
                 {
                     return null;
                 }

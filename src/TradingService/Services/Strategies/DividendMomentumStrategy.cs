@@ -265,8 +265,8 @@ public class DividendMomentumStrategy : IStrategy
                 // More conservative strike selection for dividend stocks
                 var safetyMargin = (currentPrice - option.Strike) / currentPrice;
 
-                // Require larger safety margin (8-18% OTM)
-                if (safetyMargin < 0.08m || safetyMargin > 0.18m)
+                // Require larger safety margin (3-18% OTM)
+                if (safetyMargin < 0.03m || safetyMargin > 0.18m)
                 {
                     return null;
                 }
