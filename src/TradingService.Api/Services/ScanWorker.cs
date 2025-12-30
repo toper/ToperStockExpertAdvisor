@@ -13,18 +13,21 @@ public class ScanWorker : BackgroundService
     private readonly IServiceProvider _services;
     private readonly IHostEnvironment _environment;
     private readonly AppSettings _settings;
+    private readonly ScanStateTracker _stateTracker;
     private DateTime? _lastScanTime = null;
 
     public ScanWorker(
         ILogger<ScanWorker> logger,
         IServiceProvider services,
         IHostEnvironment environment,
-        IOptions<AppSettings> settings)
+        IOptions<AppSettings> settings,
+        ScanStateTracker stateTracker)
     {
         _logger = logger;
         _services = services;
         _environment = environment;
         _settings = settings.Value;
+        _stateTracker = stateTracker;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -81,6 +84,22 @@ public class ScanWorker : BackgroundService
 
     private async Task ExecuteDailyScanAsync(CancellationToken cancellationToken)
     {
+        // CRITICAL: Check if a scan is already in progress
+        if (_stateTracker.IsScanInProgress)
+        {
+            var scanDuration = _stateTracker.ScanStartedAt.HasValue
+                ? DateTime.UtcNow - _stateTracker.ScanStartedAt.Value
+                : TimeSpan.Zero;
+
+            _logger.LogWarning(
+                "Skipping scheduled scan - another scan is already in progress " +
+                "(started {Duration:hh\\:mm\\:ss} ago, {ScannedCount}/{TotalSymbols} symbols scanned)",
+                scanDuration,
+                _stateTracker.ScannedCount,
+                _stateTracker.TotalSymbols);
+            return;
+        }
+
         _logger.LogInformation("Starting daily scan at {Time}", DateTime.Now);
 
         using var scope = _services.CreateScope();

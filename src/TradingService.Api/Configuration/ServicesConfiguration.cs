@@ -133,7 +133,11 @@ public static class ServicesConfiguration
         {
             options.AddDefaultPolicy(policy =>
             {
-                policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
+                policy.WithOrigins(
+                          "http://localhost:3000",       // Dev: Vite dev server (old)
+                          "http://localhost:5173",       // Dev: Vite dev server (new)
+                          "https://stock.toper.pl",      // Production: Main domain
+                          "http://stock.toper.pl")       // Production: HTTP redirect
                       .AllowAnyHeader()
                       .AllowAnyMethod()
                       .AllowCredentials();
