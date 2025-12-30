@@ -8,20 +8,9 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const totalCount = ref(0)
-  const selectedSymbol = ref<string | null>(null)
 
   const sortedRecommendations = computed(() => {
     return [...recommendations.value].sort((a, b) => b.confidence - a.confidence)
-  })
-
-  const uniqueSymbols = computed(() => {
-    const symbols = new Set(recommendations.value.map(r => r.symbol))
-    return Array.from(symbols).sort()
-  })
-
-  const filteredRecommendations = computed(() => {
-    if (!selectedSymbol.value) return sortedRecommendations.value
-    return sortedRecommendations.value.filter(r => r.symbol === selectedSymbol.value)
   })
 
   const highConfidenceCount = computed(() => {
@@ -80,10 +69,6 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     }
   }
 
-  function setSelectedSymbol(symbol: string | null) {
-    selectedSymbol.value = symbol
-  }
-
   function clearError() {
     error.value = null
   }
@@ -93,15 +78,11 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     loading,
     error,
     totalCount,
-    selectedSymbol,
     sortedRecommendations,
-    uniqueSymbols,
-    filteredRecommendations,
     highConfidenceCount,
     fetchRecommendations,
     fetchActiveRecommendations,
     fetchBySymbol,
-    setSelectedSymbol,
     clearError
   }
 })

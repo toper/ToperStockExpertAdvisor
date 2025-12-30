@@ -380,3 +380,6 @@ FodyWeavers.xsd
 /nul
 /PLAN.md
 /CLAUDE.md
+
+# Documentation (local only)
+/docs/

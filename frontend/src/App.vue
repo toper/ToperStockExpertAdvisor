@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import StatsCards from '@/components/recommendations/StatsCards.vue'
-import SymbolFilter from '@/components/recommendations/SymbolFilter.vue'
+import StrategySelector from '@/components/recommendations/StrategySelector.vue'
 import RecommendationsTable from '@/components/recommendations/RecommendationsTable.vue'
 import RecommendationsList from '@/components/recommendations/RecommendationsList.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -12,6 +12,12 @@ import { Squares2X2Icon, TableCellsIcon, ArrowPathIcon } from '@heroicons/vue/24
 
 const store = useRecommendationsStore()
 const viewMode = ref<'table' | 'cards'>('table')
+const selectedStrategy = ref<string | null>(null)
+
+const filteredRecommendations = computed(() => {
+  if (!selectedStrategy.value) return store.sortedRecommendations
+  return store.sortedRecommendations.filter(r => r.strategyName === selectedStrategy.value)
+})
 
 onMounted(() => {
   store.fetchActiveRecommendations()
@@ -19,6 +25,10 @@ onMounted(() => {
 
 function refresh() {
   store.fetchActiveRecommendations()
+}
+
+function handleStrategySelect(strategy: string | null) {
+  selectedStrategy.value = strategy
 }
 </script>
 
@@ -74,10 +84,10 @@ function refresh() {
       />
 
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <SymbolFilter
-          :symbols="store.uniqueSymbols"
-          :selected-symbol="store.selectedSymbol"
-          @select="store.setSelectedSymbol"
+        <StrategySelector
+          :recommendations="store.recommendations"
+          :selectedStrategy="selectedStrategy"
+          @update:selectedStrategy="handleStrategySelect"
         />
       </div>
 
@@ -89,16 +99,16 @@ function refresh() {
       <template v-else>
         <RecommendationsTable
           v-if="viewMode === 'table'"
-          :recommendations="store.filteredRecommendations"
+          :recommendations="filteredRecommendations"
         />
         <RecommendationsList
           v-else
-          :recommendations="store.filteredRecommendations"
+          :recommendations="filteredRecommendations"
         />
       </template>
 
       <div v-if="!store.loading && store.totalCount > 0" class="text-center text-sm text-gray-500">
-        Showing {{ store.filteredRecommendations.length }} of {{ store.totalCount }} recommendations
+        Showing {{ filteredRecommendations.length }} of {{ store.totalCount }} recommendations
       </div>
     </div>
   </AppLayout>

@@ -53,6 +53,10 @@ function formatDate(dateStr: string): string {
   return format(new Date(dateStr), 'MMM dd, yyyy')
 }
 
+function formatScannedAt(dateStr: string): string {
+  return format(new Date(dateStr), 'MMM dd, HH:mm')
+}
+
 function openCalculator(recommendation: PutRecommendation) {
   selectedRecommendation.value = recommendation
   showCalculator.value = true
@@ -193,6 +197,9 @@ function closeScoreDetails() {
               </div>
             </th>
             <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Scanned
+            </th>
+            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Actions
             </th>
           </tr>
@@ -260,6 +267,9 @@ function closeScoreDetails() {
               </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
+              <div class="text-xs text-gray-600">{{ formatScannedAt(rec.scannedAt) }}</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-center">
               <div class="flex items-center justify-center gap-2">
                 <button
                   @click="openCalculator(rec)"
@@ -279,7 +289,7 @@ function closeScoreDetails() {
             </td>
           </tr>
           <tr v-if="!recommendations.length">
-            <td colspan="15" class="px-6 py-12 text-center text-gray-500">
+            <td colspan="16" class="px-6 py-12 text-center text-gray-500">
               No recommendations found
             </td>
           </tr>
