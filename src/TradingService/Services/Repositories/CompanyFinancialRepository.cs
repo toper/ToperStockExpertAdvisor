@@ -82,22 +82,55 @@ public class CompanyFinancialRepository : ICompanyFinancialRepository
                 return;
             }
 
-            // Use InsertOrReplace for UPSERT logic
-            // This will insert new records or replace existing ones based on unique index (Symbol, ReportDate)
+            // Use manual UPSERT logic to work around LinqToDB's InsertOrReplace limitation with Identity columns
+            // For each financial record, try to find existing one and update, or insert if not found
             var inserted = 0;
+            var updated = 0;
+
             foreach (var financial in financialsList)
             {
-                await db.InsertOrReplaceAsync(financial, token: cancellationToken);
-                inserted++;
+                // Check if record exists based on unique constraint (Symbol, ReportDate)
+                var existing = await db.CompanyFinancials
+                    .Where(cf => cf.Symbol == financial.Symbol && cf.ReportDate == financial.ReportDate)
+                    .FirstOrDefaultAsync(cancellationToken);
 
-                if (inserted % 100 == 0)
+                if (existing != null)
                 {
-                    _logger.LogDebug("Inserted/updated {Count}/{Total} company financials",
-                        inserted, financialsList.Count);
+                    // Update existing record
+                    existing.FetchedAt = financial.FetchedAt;
+                    existing.PiotroskiFScore = financial.PiotroskiFScore;
+                    existing.AltmanZScore = financial.AltmanZScore;
+                    existing.ROA = financial.ROA;
+                    existing.DebtToEquity = financial.DebtToEquity;
+                    existing.CurrentRatio = financial.CurrentRatio;
+                    existing.MarketCapBillions = financial.MarketCapBillions;
+                    existing.TotalAssets = financial.TotalAssets;
+                    existing.TotalLiabilities = financial.TotalLiabilities;
+                    existing.TotalEquity = financial.TotalEquity;
+                    existing.Revenue = financial.Revenue;
+                    existing.NetIncome = financial.NetIncome;
+                    existing.OperatingCashFlow = financial.OperatingCashFlow;
+                    existing.SharesOutstanding = financial.SharesOutstanding;
+
+                    await db.UpdateAsync(existing, token: cancellationToken);
+                    updated++;
+                }
+                else
+                {
+                    // Insert new record (LinqToDB will handle Id auto-increment)
+                    await db.InsertAsync(financial, token: cancellationToken);
+                    inserted++;
+                }
+
+                if ((inserted + updated) % 100 == 0)
+                {
+                    _logger.LogDebug("Processed {Count}/{Total} company financials ({Inserted} inserted, {Updated} updated)",
+                        inserted + updated, financialsList.Count, inserted, updated);
                 }
             }
 
-            _logger.LogInformation("Bulk inserted/updated {Count} company financial records", inserted);
+            _logger.LogInformation("Bulk processed {Total} company financial records ({Inserted} inserted, {Updated} updated)",
+                inserted + updated, inserted, updated);
         }
         catch (Exception ex)
         {
