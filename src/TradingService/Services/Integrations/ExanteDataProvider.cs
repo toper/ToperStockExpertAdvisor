@@ -113,13 +113,12 @@ public class ExanteDataProvider : IOptionsDataProvider
             // REAL MODE: Fetch options from Exante API
             await ConfigureAuthenticationAsync();
             var realPutOptions = await FetchExanteOptionsAsync(symbol, "PUT", (decimal)currentPrice);
-            var realCallOptions = await FetchExanteOptionsAsync(symbol, "CALL", (decimal)currentPrice);
 
             return new OptionsChain
             {
                 UnderlyingSymbol = symbol,
                 PutOptions = realPutOptions,
-                CallOptions = realCallOptions
+                CallOptions = new List<OptionContract>() // Empty - we only need PUT options
             };
         }
         catch (Exception ex)
@@ -259,9 +258,6 @@ public class ExanteDataProvider : IOptionsDataProvider
                     Delta = CalculateSyntheticDelta(currentPrice, strike, daysToExpiry, iv, optionType == "PUT"),
                     Theta = CalculateSyntheticTheta(currentPrice, strike, daysToExpiry, iv, optionType == "PUT")
                 });
-
-                if (options.Count >= 100) // Limit to avoid too many options
-                    break;
             }
 
             _logger.LogInformation("Fetched {Count} {OptionType} options for {Symbol}", options.Count, optionType, symbol);

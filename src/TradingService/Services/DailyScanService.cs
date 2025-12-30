@@ -15,37 +15,34 @@ public class DailyScanService : IDailyScanService
 {
     private readonly IMarketDataAggregator _marketDataAggregator;
     private readonly IStrategyLoader _strategyLoader;
-    private readonly IRecommendationRepository _recommendationRepository;
+    private readonly IStockDataRepository _stockDataRepository;
     private readonly IDbContextFactory _dbContextFactory;
     private readonly ILogger<DailyScanService> _logger;
     private readonly AppSettings _appSettings;
     private readonly IOptionsDiscoveryService? _optionsDiscoveryService;
     private readonly IFinancialHealthService _financialHealthService;
     private readonly IScanProgressNotifier? _scanProgressNotifier;
-    private readonly ICompanyFinancialRepository _companyFinancialRepository;
     private readonly IBulkFinancialDataProcessor _bulkFinancialDataProcessor;
 
     public DailyScanService(
         IMarketDataAggregator marketDataAggregator,
         IStrategyLoader strategyLoader,
-        IRecommendationRepository recommendationRepository,
+        IStockDataRepository stockDataRepository,
         IDbContextFactory dbContextFactory,
         ILogger<DailyScanService> logger,
         IOptions<AppSettings> appSettings,
         IFinancialHealthService financialHealthService,
-        ICompanyFinancialRepository companyFinancialRepository,
         IBulkFinancialDataProcessor bulkFinancialDataProcessor,
         IOptionsDiscoveryService? optionsDiscoveryService = null,
         IScanProgressNotifier? scanProgressNotifier = null)
     {
         _marketDataAggregator = marketDataAggregator;
         _strategyLoader = strategyLoader;
-        _recommendationRepository = recommendationRepository;
+        _stockDataRepository = stockDataRepository;
         _dbContextFactory = dbContextFactory;
         _logger = logger;
         _appSettings = appSettings.Value;
         _financialHealthService = financialHealthService;
-        _companyFinancialRepository = companyFinancialRepository;
         _bulkFinancialDataProcessor = bulkFinancialDataProcessor;
         _optionsDiscoveryService = optionsDiscoveryService;
         _scanProgressNotifier = scanProgressNotifier;
@@ -68,6 +65,10 @@ public class DailyScanService : IDailyScanService
 
             _logger.LogInformation("Starting daily market scan at {Time:yyyy-MM-dd HH:mm:ss}", scanLog.StartedAt);
 
+            // Step 0: Cleanup stale records (90-day retention)
+            _logger.LogInformation("Cleaning up stale stock data (90-day retention)...");
+            await _stockDataRepository.DeleteStaleRecordsAsync(TimeSpan.FromDays(90), cancellationToken);
+
             // Load all active strategies
             var strategies = _strategyLoader.LoadAllStrategies().ToList();
             if (!strategies.Any())
@@ -77,12 +78,20 @@ public class DailyScanService : IDailyScanService
 
             _logger.LogInformation("Loaded {Count} strategies for scanning", strategies.Count);
 
-            // NEW: Step 0 - Process bulk financial data if stale (BLOCKS scan until complete)
+            // Step 1: Process bulk financial data if stale (BLOCKS scan until complete)
             _logger.LogInformation("Checking bulk financial data freshness...");
             var dataRefreshDays = _appSettings.FinancialHealth.DataRefreshDays;
-            var isStale = await _companyFinancialRepository.IsDataStaleAsync(
-                TimeSpan.FromDays(dataRefreshDays),
-                cancellationToken);
+
+            // Check if SimFin data needs refresh by looking at StockData.SimFinUpdatedAt
+            var totalCount = await _stockDataRepository.GetTotalCountAsync(cancellationToken);
+            var isStale = totalCount == 0; // No data = stale
+
+            if (!isStale)
+            {
+                // Check if most recent SimFinUpdatedAt is older than refresh threshold
+                // For now, we'll process bulk data on first run (totalCount == 0)
+                // TODO: Add method to check SimFinUpdatedAt timestamp
+            }
 
             if (isStale)
             {
@@ -125,11 +134,8 @@ public class DailyScanService : IDailyScanService
                 await _scanProgressNotifier.NotifyScanStartedAsync(scanLog.Id, symbols.Count);
             }
 
-            // Deactivate old recommendations before starting new scan
-            await _recommendationRepository.DeactivateOldRecommendationsAsync(DateTime.UtcNow.AddDays(-1));
-
-            // Collect all recommendations
-            var allRecommendations = new List<PutRecommendation>();
+            // Track recommendations per symbol (pick best one)
+            var bestRecommendationsPerSymbol = new Dictionary<string, PutRecommendation>();
             var symbolsProcessed = 0;
             var errors = new List<string>();
 
@@ -169,6 +175,12 @@ public class DailyScanService : IDailyScanService
                         continue;
                     }
 
+                    // Calculate financial health ONCE per symbol (instead of 3x in each strategy)
+                    var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
+
+                    // Add financial health to aggregated data
+                    marketData = marketData with { FinancialHealthMetrics = healthMetrics };
+
                     // Run all strategies on this symbol
                     foreach (var strategy in strategies)
                     {
@@ -183,11 +195,21 @@ public class DailyScanService : IDailyScanService
 
                             if (recommendations.Any())
                             {
-                                allRecommendations.AddRange(recommendations);
+                                // Pick BEST recommendation from this strategy (highest confidence)
+                                var bestFromStrategy = recommendations
+                                    .OrderByDescending(r => r.Confidence)
+                                    .First();
+
+                                // Update best recommendation for this symbol if this one is better
+                                if (!bestRecommendationsPerSymbol.ContainsKey(symbol) ||
+                                    bestFromStrategy.Confidence > bestRecommendationsPerSymbol[symbol].Confidence)
+                                {
+                                    bestRecommendationsPerSymbol[symbol] = bestFromStrategy;
+                                }
 
                                 _logger.LogInformation(
-                                    "{Strategy} generated {Count} recommendations for {Symbol}",
-                                    strategy.Name, recommendations.Count(), symbol);
+                                    "{Strategy} generated {Count} recommendations for {Symbol} (best confidence: {Confidence:P})",
+                                    strategy.Name, recommendations.Count(), symbol, bestFromStrategy.Confidence);
                             }
                         }
                         catch (Exception ex)
@@ -210,7 +232,7 @@ public class DailyScanService : IDailyScanService
                             CurrentIndex = symbolsProcessed,
                             TotalSymbols = symbols.Count,
                             Status = "Completed",
-                            RecommendationsCount = allRecommendations.Count(r => r.Symbol == symbol)
+                            RecommendationsCount = bestRecommendationsPerSymbol.ContainsKey(symbol) ? 1 : 0
                         });
                     }
 
@@ -237,27 +259,55 @@ public class DailyScanService : IDailyScanService
                 }
             }
 
-            // Save ALL recommendations (NO FILTERING)
+            // UPSERT best recommendations to StockData
             var savedCount = 0;
-            if (allRecommendations.Any())
+            if (bestRecommendationsPerSymbol.Any())
             {
                 try
                 {
-                    // Save ALL recommendations, sort by confidence (but don't filter)
-                    var sortedRecommendations = allRecommendations
-                        .OrderByDescending(r => r.Confidence)
-                        .ThenBy(r => r.Symbol)
-                        .ThenBy(r => r.DaysToExpiry)
-                        .ToList();
+                    _logger.LogInformation("Saving {Count} recommendations (best per symbol)...",
+                        bestRecommendationsPerSymbol.Count);
 
-                    savedCount = await _recommendationRepository.AddRangeAsync(sortedRecommendations);
+                    foreach (var (symbol, recommendation) in bestRecommendationsPerSymbol)
+                    {
+                        try
+                        {
+                            // Map PutRecommendation to StockData (Exante fields)
+                            var stockData = new StockData
+                            {
+                                Symbol = symbol,
+                                // Yahoo + Exante fields
+                                CurrentPrice = recommendation.CurrentPrice,
+                                StrikePrice = recommendation.StrikePrice,
+                                Expiry = recommendation.Expiry,
+                                DaysToExpiry = recommendation.DaysToExpiry,
+                                Premium = recommendation.Premium,
+                                Breakeven = recommendation.Breakeven,
+                                Confidence = recommendation.Confidence,
+                                ExpectedGrowthPercent = recommendation.ExpectedGrowthPercent,
+                                StrategyName = recommendation.StrategyName,
+                                ExanteSymbol = recommendation.ExanteSymbol,
+                                OptionPrice = recommendation.OptionPrice,
+                                Volume = recommendation.Volume,
+                                OpenInterest = recommendation.OpenInterest,
+                            };
 
-                    _logger.LogInformation(
-                        "Saved ALL {SavedCount} recommendations to database (no filtering)",
-                        savedCount);
+                            // UPSERT - updates Exante data, preserves SimFin data
+                            await _stockDataRepository.UpsertExanteDataAsync(stockData, cancellationToken);
+                            savedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error upserting stock data for {Symbol}", symbol);
+                            errors.Add($"{symbol} UPSERT: {ex.Message}");
+                        }
+                    }
+
+                    _logger.LogInformation("Saved {SavedCount} stock data records", savedCount);
 
                     // Log top recommendations by confidence
-                    var topRecommendations = sortedRecommendations
+                    var topRecommendations = bestRecommendationsPerSymbol.Values
+                        .OrderByDescending(r => r.Confidence)
                         .Take(10)
                         .Select(r => $"{r.Symbol} PUT ${r.StrikePrice} {r.Expiry:MM/dd} (Conf: {r.Confidence:P})");
 
@@ -266,7 +316,7 @@ public class DailyScanService : IDailyScanService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error saving recommendations to database");
+                    _logger.LogError(ex, "Error saving stock data to database");
                     errors.Add($"Database save: {ex.Message}");
                 }
             }
@@ -427,7 +477,7 @@ public class DailyScanService : IDailyScanService
     /// <summary>
     /// Apply F-Score pre-filtering to reduce Exante API calls
     /// Only scans symbols with F-Score > threshold
-    /// Fallback: Symbols not in SimFin database are scanned anyway
+    /// Fallback: Symbols not in StockData are scanned anyway
     /// </summary>
     private async Task<List<string>> ApplyFinancialHealthFilterAsync(
         List<string> symbols,
@@ -437,16 +487,16 @@ public class DailyScanService : IDailyScanService
         _logger.LogInformation("Pre-filtering {Count} symbols by F-Score > {MinScore}...",
             symbols.Count, minFScore);
 
-        // Get symbols with F-Score > threshold from database
-        var healthySymbols = await _companyFinancialRepository.GetByFScoreThresholdAsync(
+        // Get symbols with F-Score >= threshold from StockData
+        var healthyStocks = await _stockDataRepository.GetHealthySymbolsAsync(
             minFScore,
             cancellationToken);
 
         var healthySymbolSet = new HashSet<string>(
-            healthySymbols.Select(cf => cf.Symbol),
+            healthyStocks.Select(s => s.Symbol),
             StringComparer.OrdinalIgnoreCase);
 
-        // Partition symbols: healthy (in SimFin with F-Score > 7) and fallback (not in SimFin)
+        // Partition symbols: healthy (F-Score >= threshold) and fallback (not in StockData)
         var filteredSymbols = new List<string>();
         var fallbackSymbols = new List<string>();
 
@@ -454,25 +504,25 @@ public class DailyScanService : IDailyScanService
         {
             if (healthySymbolSet.Contains(symbol))
             {
-                // Has F-Score > threshold
+                // Has F-Score >= threshold
                 filteredSymbols.Add(symbol);
             }
             else
             {
-                // Check if symbol exists in SimFin database at all
-                var financial = await _companyFinancialRepository.GetBySymbolAsync(symbol, cancellationToken);
-                if (financial == null)
+                // Check if symbol exists in StockData at all
+                var stockData = await _stockDataRepository.GetBySymbolAsync(symbol, cancellationToken);
+                if (stockData == null)
                 {
-                    // Not in SimFin database - FALLBACK: scan anyway (young/small companies)
+                    // Not in StockData - FALLBACK: scan anyway (young/small companies not in SimFin)
                     fallbackSymbols.Add(symbol);
                     filteredSymbols.Add(symbol);
                 }
-                // else: Symbol exists in SimFin but F-Score <= threshold, skip it
+                // else: Symbol exists in StockData but F-Score < threshold, SKIP it
             }
         }
 
         _logger.LogInformation(
-            "Pre-filtering complete: {Original} → {Filtered} symbols ({Healthy} with F-Score > {MinScore}, {Fallback} fallback without SimFin data, {Skipped} skipped)",
+            "Pre-filtering complete: {Original} → {Filtered} symbols ({Healthy} with F-Score >= {MinScore}, {Fallback} fallback without StockData, {Skipped} skipped)",
             symbols.Count,
             filteredSymbols.Count,
             filteredSymbols.Count - fallbackSymbols.Count,
@@ -482,7 +532,7 @@ public class DailyScanService : IDailyScanService
 
         if (fallbackSymbols.Any())
         {
-            _logger.LogDebug("Fallback symbols (not in SimFin): {Symbols}",
+            _logger.LogDebug("Fallback symbols (not in StockData): {Symbols}",
                 string.Join(", ", fallbackSymbols.Take(10)));
         }
 

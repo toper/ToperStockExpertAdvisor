@@ -81,11 +81,11 @@ const summaryStats = computed(() => {
 
   for (const rec of props.recommendations) {
     // Calculate annualized return
-    const returnOnRisk = rec.premium / rec.strikePrice
+    const returnOnRisk = (rec.premium ?? 0) / (rec.strikePrice ?? 1)
     const annualizedReturn = (returnOnRisk * 365) / (rec.daysToExpiry || 1)
     totalReturn += annualizedReturn
-    totalConfidence += rec.confidence
-    totalPremium += rec.premium
+    totalConfidence += (rec.confidence ?? 0)
+    totalPremium += (rec.premium ?? 0)
   }
 
   return {

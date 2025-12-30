@@ -29,7 +29,7 @@ const strategyStats = computed(() => {
     const existing = stats.get(strategy) || { count: 0, avgConfidence: 0 }
     stats.set(strategy, {
       count: existing.count + 1,
-      avgConfidence: (existing.avgConfidence * existing.count + rec.confidence) / (existing.count + 1)
+      avgConfidence: (existing.avgConfidence * existing.count + (rec.confidence ?? 0)) / (existing.count + 1)
     })
   }
 

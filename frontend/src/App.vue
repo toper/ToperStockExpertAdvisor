@@ -33,19 +33,19 @@ const filteredRecommendations = computed(() => {
     filtered = filtered.filter(r => r.strategyName === selectedStrategy.value)
   }
 
-  // Filter by scan date
+  // Filter by modification date
   if (dateRange.value.from || dateRange.value.to) {
     filtered = filtered.filter(r => {
-      const scannedDate = new Date(r.scannedAt)
-      if (dateRange.value.from && scannedDate < dateRange.value.from) return false
-      if (dateRange.value.to && scannedDate > dateRange.value.to) return false
+      const modifiedDate = new Date(r.modificationTime)
+      if (dateRange.value.from && modifiedDate < dateRange.value.from) return false
+      if (dateRange.value.to && modifiedDate > dateRange.value.to) return false
       return true
     })
   }
 
   // Filter by confidence
   if (filters.value.minConfidence > 0) {
-    filtered = filtered.filter(r => r.confidence >= filters.value.minConfidence)
+    filtered = filtered.filter(r => (r.confidence ?? 0) >= filters.value.minConfidence)
   }
 
   // Filter by F-Score
@@ -61,8 +61,9 @@ const filteredRecommendations = computed(() => {
   // Filter by days to expiry
   if (filters.value.minDays > 0 || filters.value.maxDays > 0) {
     filtered = filtered.filter(r => {
-      if (filters.value.minDays > 0 && r.daysToExpiry < filters.value.minDays) return false
-      if (filters.value.maxDays > 0 && r.daysToExpiry > filters.value.maxDays) return false
+      const days = r.daysToExpiry ?? 0
+      if (filters.value.minDays > 0 && days < filters.value.minDays) return false
+      if (filters.value.maxDays > 0 && days > filters.value.maxDays) return false
       return true
     })
   }

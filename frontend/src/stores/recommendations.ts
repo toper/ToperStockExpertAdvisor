@@ -31,11 +31,11 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
   const hubClient = createScanProgressHub(apiUrl)
 
   const sortedRecommendations = computed(() => {
-    return [...recommendations.value].sort((a, b) => b.confidence - a.confidence)
+    return [...recommendations.value].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
   })
 
   const highConfidenceCount = computed(() => {
-    return recommendations.value.filter(r => r.confidence >= 0.7).length
+    return recommendations.value.filter(r => (r.confidence ?? 0) >= 0.7).length
   })
 
   async function fetchRecommendations(minDays?: number, maxDays?: number) {

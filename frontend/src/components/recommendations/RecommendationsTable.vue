@@ -42,18 +42,19 @@ function toggleSort(key: SortKey) {
   }
 }
 
-function getConfidenceClass(confidence: number): string {
-  if (confidence >= 0.8) return 'bg-green-100 text-green-800'
-  if (confidence >= 0.7) return 'bg-blue-100 text-blue-800'
-  if (confidence >= 0.6) return 'bg-yellow-100 text-yellow-800'
+function getConfidenceClass(confidence: number | undefined): string {
+  const conf = confidence ?? 0
+  if (conf >= 0.8) return 'bg-green-100 text-green-800'
+  if (conf >= 0.7) return 'bg-blue-100 text-blue-800'
+  if (conf >= 0.6) return 'bg-yellow-100 text-yellow-800'
   return 'bg-gray-100 text-gray-800'
 }
 
-function formatDate(dateStr: string): string {
-  return format(new Date(dateStr), 'MMM dd, yyyy')
+function formatDate(dateStr: string | undefined): string {
+  return dateStr ? format(new Date(dateStr), 'MMM dd, yyyy') : '-'
 }
 
-function formatScannedAt(dateStr: string): string {
+function formatModificationTime(dateStr: string): string {
   return format(new Date(dateStr), 'MMM dd, HH:mm')
 }
 
@@ -197,7 +198,7 @@ function closeScoreDetails() {
               </div>
             </th>
             <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Scanned
+              Last Updated
             </th>
             <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Actions
@@ -217,13 +218,13 @@ function closeScoreDetails() {
               <span class="text-sm text-gray-600">{{ rec.strategyName }}</span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
-              <span class="text-sm text-gray-900">${{ rec.currentPrice.toFixed(2) }}</span>
+              <span class="text-sm text-gray-900">${{ (rec.currentPrice ?? 0).toFixed(2) }}</span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
-              <span class="text-sm text-gray-900">${{ rec.strikePrice.toFixed(2) }}</span>
+              <span class="text-sm text-gray-900">${{ (rec.strikePrice ?? 0).toFixed(2) }}</span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
-              <span class="text-sm font-medium text-green-600">${{ rec.premium.toFixed(2) }}</span>
+              <span class="text-sm font-medium text-green-600">${{ (rec.premium ?? 0).toFixed(2) }}</span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
               <span v-if="rec.exanteSymbol" class="text-xs text-gray-600 font-mono">{{ rec.exanteSymbol }}</span>
@@ -243,10 +244,10 @@ function closeScoreDetails() {
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
               <div class="text-sm text-gray-900">{{ formatDate(rec.expiry) }}</div>
-              <div class="text-xs text-gray-500">{{ rec.daysToExpiry }}d</div>
+              <div class="text-xs text-gray-500">{{ rec.daysToExpiry ?? 0 }}d</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-right">
-              <span class="text-sm font-medium text-green-600">+{{ rec.expectedGrowthPercent.toFixed(1) }}%</span>
+              <span class="text-sm font-medium text-green-600">+{{ (rec.expectedGrowthPercent ?? 0).toFixed(1) }}%</span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
               <span v-if="rec.piotroskiFScore !== undefined" class="text-sm text-gray-900">{{ rec.piotroskiFScore }}</span>
@@ -263,11 +264,11 @@ function closeScoreDetails() {
                   getConfidenceClass(rec.confidence)
                 ]"
               >
-                {{ (rec.confidence * 100).toFixed(0) }}%
+                {{ ((rec.confidence ?? 0) * 100).toFixed(0) }}%
               </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
-              <div class="text-xs text-gray-600">{{ formatScannedAt(rec.scannedAt) }}</div>
+              <div class="text-xs text-gray-600">{{ formatModificationTime(rec.modificationTime) }}</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-center">
               <div class="flex items-center justify-center gap-2">

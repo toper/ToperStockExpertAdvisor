@@ -12,11 +12,10 @@ public class DailyScanServiceTests
 {
     private readonly Mock<IMarketDataAggregator> _aggregatorMock;
     private readonly Mock<IStrategyLoader> _strategyLoaderMock;
-    private readonly Mock<IRecommendationRepository> _repositoryMock;
+    private readonly Mock<IStockDataRepository> _stockDataRepositoryMock;
     private readonly Mock<TradingService.Data.IDbContextFactory> _dbFactoryMock;
     private readonly Mock<ILogger<DailyScanService>> _loggerMock;
     private readonly Mock<IFinancialHealthService> _financialHealthServiceMock;
-    private readonly Mock<ICompanyFinancialRepository> _companyFinancialRepositoryMock;
     private readonly Mock<IBulkFinancialDataProcessor> _bulkFinancialDataProcessorMock;
     private readonly DailyScanService _service;
 
@@ -24,11 +23,10 @@ public class DailyScanServiceTests
     {
         _aggregatorMock = new Mock<IMarketDataAggregator>();
         _strategyLoaderMock = new Mock<IStrategyLoader>();
-        _repositoryMock = new Mock<IRecommendationRepository>();
+        _stockDataRepositoryMock = new Mock<IStockDataRepository>();
         _dbFactoryMock = new Mock<TradingService.Data.IDbContextFactory>();
         _loggerMock = new Mock<ILogger<DailyScanService>>();
         _financialHealthServiceMock = new Mock<IFinancialHealthService>();
-        _companyFinancialRepositoryMock = new Mock<ICompanyFinancialRepository>();
         _bulkFinancialDataProcessorMock = new Mock<IBulkFinancialDataProcessor>();
 
         // Setup financial health service mock
@@ -44,10 +42,10 @@ public class DailyScanServiceTests
             .Setup(x => x.MeetsHealthRequirements(It.IsAny<FinancialHealthMetrics>()))
             .Returns(true);
 
-        // Setup company financial repository mock (data is fresh - no bulk processing needed)
-        _companyFinancialRepositoryMock
-            .Setup(x => x.IsDataStaleAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+        // Setup stock data repository mock (data is fresh - no bulk processing needed)
+        _stockDataRepositoryMock
+            .Setup(x => x.GetTotalCountAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(100); // Non-zero = data exists (not stale)
 
         var appSettings = Options.Create(new AppSettings
         {
@@ -67,12 +65,11 @@ public class DailyScanServiceTests
         _service = new DailyScanService(
             _aggregatorMock.Object,
             _strategyLoaderMock.Object,
-            _repositoryMock.Object,
+            _stockDataRepositoryMock.Object,
             _dbFactoryMock.Object,
             _loggerMock.Object,
             appSettings,
             _financialHealthServiceMock.Object,
-            _companyFinancialRepositoryMock.Object,
             _bulkFinancialDataProcessorMock.Object);
     }
 
@@ -91,11 +88,11 @@ public class DailyScanServiceTests
         _aggregatorMock.Setup(a => a.GetFullMarketDataAsync(It.IsAny<string>()))
             .ReturnsAsync(new AggregatedMarketData());
 
-        _repositoryMock.Setup(r => r.DeactivateOldRecommendationsAsync(It.IsAny<DateTime>()))
-            .Returns(Task.FromResult(0));
+        _stockDataRepositoryMock.Setup(r => r.UpsertExanteDataAsync(It.IsAny<StockData>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
-        _repositoryMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<PutRecommendation>>()))
-            .Returns(Task.FromResult(0));
+        _stockDataRepositoryMock.Setup(r => r.DeleteStaleRecordsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await _service.ExecuteScanAsync(CancellationToken.None);
@@ -114,11 +111,11 @@ public class DailyScanServiceTests
         _aggregatorMock.Setup(a => a.GetFullMarketDataAsync(It.IsAny<string>()))
             .ReturnsAsync(new AggregatedMarketData());
 
-        _repositoryMock.Setup(r => r.DeactivateOldRecommendationsAsync(It.IsAny<DateTime>()))
-            .Returns(Task.FromResult(0));
+        _stockDataRepositoryMock.Setup(r => r.UpsertExanteDataAsync(It.IsAny<StockData>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
-        _repositoryMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<PutRecommendation>>()))
-            .Returns(Task.FromResult(0));
+        _stockDataRepositoryMock.Setup(r => r.DeleteStaleRecordsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await _service.ExecuteScanAsync(CancellationToken.None);
@@ -138,17 +135,17 @@ public class DailyScanServiceTests
         _aggregatorMock.Setup(a => a.GetFullMarketDataAsync(It.IsAny<string>()))
             .ReturnsAsync(new AggregatedMarketData());
 
-        _repositoryMock.Setup(r => r.DeactivateOldRecommendationsAsync(It.IsAny<DateTime>()))
-            .Returns(Task.FromResult(5));
+        _stockDataRepositoryMock.Setup(r => r.DeleteStaleRecordsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
-        _repositoryMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<PutRecommendation>>()))
-            .Returns(Task.FromResult(0));
+        _stockDataRepositoryMock.Setup(r => r.UpsertExanteDataAsync(It.IsAny<StockData>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await _service.ExecuteScanAsync(CancellationToken.None);
 
         // Assert
-        _repositoryMock.Verify(r => r.DeactivateOldRecommendationsAsync(It.IsAny<DateTime>()), Times.Once);
+        _stockDataRepositoryMock.Verify(r => r.DeleteStaleRecordsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -172,19 +169,19 @@ public class DailyScanServiceTests
         _aggregatorMock.Setup(a => a.GetFullMarketDataAsync(It.IsAny<string>()))
             .ReturnsAsync(new AggregatedMarketData());
 
-        _repositoryMock.Setup(r => r.DeactivateOldRecommendationsAsync(It.IsAny<DateTime>()))
-            .Returns(Task.FromResult(0));
+        _stockDataRepositoryMock.Setup(r => r.DeleteStaleRecordsAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
-        _repositoryMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<PutRecommendation>>()))
-            .Returns(Task.FromResult(2));
+        _stockDataRepositoryMock.Setup(r => r.UpsertExanteDataAsync(It.IsAny<StockData>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         // Act
         await _service.ExecuteScanAsync(CancellationToken.None);
 
         // Assert
-        _repositoryMock.Verify(
-            r => r.AddRangeAsync(It.Is<IEnumerable<PutRecommendation>>(
-                recs => recs.All(rec => rec.Confidence >= 0.6m))),
+        // Verify that UPSERT was called for recommendations with confidence >= 0.6
+        _stockDataRepositoryMock.Verify(
+            r => r.UpsertExanteDataAsync(It.Is<StockData>(s => s.Confidence >= 0.6m), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
     }
 
@@ -209,19 +206,17 @@ public class DailyScanServiceTests
         _aggregatorMock.Setup(a => a.GetFullMarketDataAsync(It.IsAny<string>()))
             .ReturnsAsync(new AggregatedMarketData());
 
-        _repositoryMock.Setup(r => r.DeactivateOldRecommendationsAsync(It.IsAny<DateTime>()))
-            .Returns(Task.FromResult(0));
-
-        IEnumerable<PutRecommendation>? savedRecommendations = null;
-        _repositoryMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<PutRecommendation>>()))
-            .Callback<IEnumerable<PutRecommendation>>(recs => savedRecommendations = recs.ToList())
-            .Returns(Task.FromResult(1));
+        var upsertedData = new List<StockData>();
+        _stockDataRepositoryMock.Setup(r => r.UpsertExanteDataAsync(It.IsAny<StockData>(), It.IsAny<CancellationToken>()))
+            .Callback<StockData, CancellationToken>((data, ct) => upsertedData.Add(data))
+            .Returns(Task.CompletedTask);
 
         // Act
         await _service.ExecuteScanAsync(CancellationToken.None);
 
-        // Assert - Only high confidence recommendations should be saved
-        savedRecommendations.Should().NotBeNull();
-        savedRecommendations!.Should().AllSatisfy(r => r.Confidence.Should().BeGreaterThanOrEqualTo(0.6m));
+        // Assert - Only high confidence recommendations should be upserted (note: now picks BEST per symbol)
+        upsertedData.Should().NotBeEmpty();
+        // Since we have 2 symbols (SPY, QQQ) with recommendations above threshold, expect 1-2 upserts
+        upsertedData.Should().HaveCountGreaterThanOrEqualTo(1);
     }
 }

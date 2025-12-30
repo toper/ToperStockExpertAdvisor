@@ -25,7 +25,7 @@ const chartData = computed(() => {
   for (const rec of props.recommendations) {
     const existing = symbolConfidence.get(rec.symbol) || { total: 0, count: 0 }
     symbolConfidence.set(rec.symbol, {
-      total: existing.total + rec.confidence,
+      total: existing.total + (rec.confidence ?? 0),
       count: existing.count + 1
     })
   }

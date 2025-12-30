@@ -213,8 +213,8 @@ try
             });
 
             // Repositories
-            services.AddSingleton<IRecommendationRepository, RecommendationRepository>();
-            services.AddSingleton<ICompanyFinancialRepository, CompanyFinancialRepository>();
+            services.AddSingleton<IStockDataRepository, StockDataRepository>();
+            services.AddSingleton<ICompanyFinancialRepository, CompanyFinancialRepository>(); // Keep for now (used by tests)
 
             // Bulk Financial Data Processor
             services.AddSingleton<IBulkFinancialDataProcessor, BulkFinancialDataProcessor>();

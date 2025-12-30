@@ -25,9 +25,9 @@ const stats = computed(() => {
 
   return {
     total: recs.length,
-    avgConfidence: (recs.reduce((sum, r) => sum + r.confidence, 0) / recs.length * 100).toFixed(1),
-    avgDaysToExpiry: Math.round(recs.reduce((sum, r) => sum + r.daysToExpiry, 0) / recs.length),
-    highConfidence: recs.filter(r => r.confidence >= 0.7).length
+    avgConfidence: (recs.reduce((sum, r) => sum + (r.confidence ?? 0), 0) / recs.length * 100).toFixed(1),
+    avgDaysToExpiry: Math.round(recs.reduce((sum, r) => sum + (r.daysToExpiry ?? 0), 0) / recs.length),
+    highConfidence: recs.filter(r => (r.confidence ?? 0) >= 0.7).length
   }
 })
 

@@ -54,9 +54,9 @@ public class DividendMomentumStrategy : IStrategy
 
             var symbol = data.MarketData!.Symbol;
 
-            // FIRST: Check financial health (Piotroski F-Score & Altman Z-Score)
+            // FIRST: Check financial health (pre-calculated in DailyScanService)
             _logger.LogInformation("Checking financial health for {Symbol}", symbol);
-            var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
+            var healthMetrics = data.FinancialHealthMetrics ?? new FinancialHealthMetrics();
 
             if (!_financialHealthService.MeetsHealthRequirements(healthMetrics))
             {

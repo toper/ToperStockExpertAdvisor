@@ -16,6 +16,7 @@ public class TradingDbContext : DataConnection
     public ITable<ScanLog> ScanLogs => this.GetTable<ScanLog>();
     public ITable<WatchlistItem> Watchlist => this.GetTable<WatchlistItem>();
     public ITable<CompanyFinancial> CompanyFinancials => this.GetTable<CompanyFinancial>();
+    public ITable<StockData> StockData => this.GetTable<StockData>();
 }
 
 public interface IDbContextFactory

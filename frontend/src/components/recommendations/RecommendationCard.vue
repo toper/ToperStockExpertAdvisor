@@ -13,7 +13,7 @@ const emit = defineEmits<{
 }>()
 
 const confidenceColor = computed(() => {
-  const conf = props.recommendation.confidence
+  const conf = props.recommendation.confidence ?? 0
   if (conf >= 0.8) return 'text-green-600 bg-green-50 border-green-200'
   if (conf >= 0.7) return 'text-blue-600 bg-blue-50 border-blue-200'
   if (conf >= 0.6) return 'text-yellow-600 bg-yellow-50 border-yellow-200'
@@ -21,11 +21,11 @@ const confidenceColor = computed(() => {
 })
 
 const formattedExpiry = computed(() => {
-  return format(new Date(props.recommendation.expiry), 'MMM dd, yyyy')
+  return props.recommendation.expiry ? format(new Date(props.recommendation.expiry), 'MMM dd, yyyy') : '-'
 })
 
-const formattedScannedAt = computed(() => {
-  return format(new Date(props.recommendation.scannedAt), 'MMM dd, HH:mm')
+const formattedModificationTime = computed(() => {
+  return format(new Date(props.recommendation.modificationTime), 'MMM dd, HH:mm')
 })
 
 import { computed } from 'vue'
@@ -44,26 +44,26 @@ import { computed } from 'vue'
           confidenceColor
         ]"
       >
-        {{ (recommendation.confidence * 100).toFixed(0) }}%
+        {{ ((recommendation.confidence ?? 0) * 100).toFixed(0) }}%
       </span>
     </div>
 
     <div class="grid grid-cols-2 gap-4 mb-4">
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">Current Price</p>
-        <p class="text-lg font-semibold text-gray-900">${{ recommendation.currentPrice.toFixed(2) }}</p>
+        <p class="text-lg font-semibold text-gray-900">${{ (recommendation.currentPrice ?? 0).toFixed(2) }}</p>
       </div>
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">Strike Price</p>
-        <p class="text-lg font-semibold text-gray-900">${{ recommendation.strikePrice.toFixed(2) }}</p>
+        <p class="text-lg font-semibold text-gray-900">${{ (recommendation.strikePrice ?? 0).toFixed(2) }}</p>
       </div>
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">Premium</p>
-        <p class="text-lg font-semibold text-green-600">${{ recommendation.premium.toFixed(2) }}</p>
+        <p class="text-lg font-semibold text-green-600">${{ (recommendation.premium ?? 0).toFixed(2) }}</p>
       </div>
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">Breakeven</p>
-        <p class="text-lg font-semibold text-gray-900">${{ recommendation.breakeven.toFixed(2) }}</p>
+        <p class="text-lg font-semibold text-gray-900">${{ (recommendation.breakeven ?? 0).toFixed(2) }}</p>
       </div>
       <div>
         <p class="text-xs text-gray-500 uppercase tracking-wide">F-Score</p>
@@ -99,11 +99,11 @@ import { computed } from 'vue'
       <div class="flex items-center gap-1 text-sm text-gray-600">
         <CalendarIcon class="h-4 w-4" />
         <span>{{ formattedExpiry }}</span>
-        <span class="text-gray-400">({{ recommendation.daysToExpiry }}d)</span>
+        <span class="text-gray-400">({{ recommendation.daysToExpiry ?? 0 }}d)</span>
       </div>
       <div class="flex items-center gap-1 text-sm text-green-600">
         <ArrowTrendingUpIcon class="h-4 w-4" />
-        <span>+{{ recommendation.expectedGrowthPercent.toFixed(1) }}%</span>
+        <span>+{{ (recommendation.expectedGrowthPercent ?? 0).toFixed(1) }}%</span>
       </div>
     </div>
 
@@ -111,7 +111,7 @@ import { computed } from 'vue'
       <div class="flex justify-between text-xs text-gray-500">
         <span>OTM: {{ recommendation.otmPercent.toFixed(1) }}%</span>
         <span>Return: {{ recommendation.potentialReturn.toFixed(2) }}%</span>
-        <span>Scanned: {{ formattedScannedAt }}</span>
+        <span>Updated: {{ formattedModificationTime }}</span>
       </div>
     </div>
 

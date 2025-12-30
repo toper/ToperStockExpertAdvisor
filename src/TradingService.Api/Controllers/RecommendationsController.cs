@@ -7,29 +7,36 @@ namespace TradingService.Api.Controllers;
 public class RecommendationsController : BaseController
 {
     private readonly ILogger<RecommendationsController> _logger;
-    private readonly IRecommendationRepository _recommendationRepository;
+    private readonly IStockDataRepository _stockDataRepository;
 
     public RecommendationsController(
         ILogger<RecommendationsController> logger,
-        IRecommendationRepository recommendationRepository)
+        IStockDataRepository stockDataRepository)
     {
         _logger = logger;
-        _recommendationRepository = recommendationRepository;
+        _stockDataRepository = stockDataRepository;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetRecommendations([FromQuery] int? minDays = 14, [FromQuery] int? maxDays = 21)
     {
-        var result = new Result<List<PutRecommendationDto>>();
+        var result = new Result<List<StockDataDto>>();
 
         try
         {
             _logger.LogInformation("Getting recommendations with minDays={MinDays}, maxDays={MaxDays}", minDays, maxDays);
 
-            var recommendations = await _recommendationRepository.GetShortTermRecommendationsAsync(
-                minDays ?? 14, maxDays ?? 21);
+            // Get all stock data with options
+            var allStockData = await _stockDataRepository.GetWithOptionsDataAsync();
 
-            result.Data = recommendations.Select(MapToDto).ToList();
+            // Filter by days to expiry
+            var filtered = allStockData
+                .Where(s => s.DaysToExpiry >= (minDays ?? 14) && s.DaysToExpiry <= (maxDays ?? 21))
+                .OrderByDescending(s => s.Confidence)
+                .ThenBy(s => s.Symbol)
+                .ToList();
+
+            result.Data = filtered.Select(MapStockDataToDto).ToList();
 
             return Ok(result);
         }
@@ -44,21 +51,27 @@ public class RecommendationsController : BaseController
     [HttpGet("{symbol}")]
     public async Task<IActionResult> GetBySymbol(string symbol)
     {
-        var result = new Result<List<PutRecommendationDto>>();
+        var result = new Result<StockDataDto?>();
 
         try
         {
-            _logger.LogInformation("Getting recommendations for symbol: {Symbol}", symbol);
+            _logger.LogInformation("Getting recommendation for symbol: {Symbol}", symbol);
 
-            var recommendations = await _recommendationRepository.GetBySymbolAsync(symbol);
-            result.Data = recommendations.Select(MapToDto).ToList();
+            var stockData = await _stockDataRepository.GetBySymbolAsync(symbol);
+
+            if (stockData == null)
+            {
+                return NotFound(new { message = $"No data found for symbol {symbol}" });
+            }
+
+            result.Data = MapStockDataToDto(stockData);
 
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting recommendations for symbol {Symbol}", symbol);
-            result.Errors.Add("Error retrieving recommendations");
+            _logger.LogError(ex, "Error getting recommendation for symbol {Symbol}", symbol);
+            result.Errors.Add("Error retrieving recommendation");
             return InternalServerError(result);
         }
     }
@@ -66,14 +79,15 @@ public class RecommendationsController : BaseController
     [HttpGet("active")]
     public async Task<IActionResult> GetActive()
     {
-        var result = new GridResult<List<PutRecommendationDto>>();
+        var result = new GridResult<List<StockDataDto>>();
 
         try
         {
             _logger.LogInformation("Getting active recommendations");
 
-            var recommendations = await _recommendationRepository.GetActiveRecommendationsAsync();
-            var dtoList = recommendations.Select(MapToDto).ToList();
+            // Get all stock data with options data (Confidence not null)
+            var stockDataList = await _stockDataRepository.GetWithOptionsDataAsync();
+            var dtoList = stockDataList.Select(MapStockDataToDto).ToList();
 
             result.Data = dtoList;
             result.TotalCount = dtoList.Count;
@@ -88,36 +102,21 @@ public class RecommendationsController : BaseController
         }
     }
 
-    [HttpPost("seed")]
-    public async Task<IActionResult> SeedTestData()
-    {
-        if (!Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")?.Equals("Development", StringComparison.OrdinalIgnoreCase) ?? true)
-        {
-            return NotFound();
-        }
-
-        var testData = new List<Data.Entities.PutRecommendation>
-        {
-            new() { Symbol = "SPY", CurrentPrice = 595.50m, StrikePrice = 570m, Expiry = DateTime.UtcNow.AddDays(14), DaysToExpiry = 14, Premium = 2.45m, Breakeven = 567.55m, Confidence = 0.78m, ExpectedGrowthPercent = 2.5m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "SPY", CurrentPrice = 595.50m, StrikePrice = 565m, Expiry = DateTime.UtcNow.AddDays(21), DaysToExpiry = 21, Premium = 3.10m, Breakeven = 561.90m, Confidence = 0.72m, ExpectedGrowthPercent = 2.8m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "QQQ", CurrentPrice = 520.25m, StrikePrice = 500m, Expiry = DateTime.UtcNow.AddDays(14), DaysToExpiry = 14, Premium = 2.80m, Breakeven = 497.20m, Confidence = 0.82m, ExpectedGrowthPercent = 3.1m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "AAPL", CurrentPrice = 248.50m, StrikePrice = 240m, Expiry = DateTime.UtcNow.AddDays(18), DaysToExpiry = 18, Premium = 1.95m, Breakeven = 238.05m, Confidence = 0.75m, ExpectedGrowthPercent = 2.2m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "MSFT", CurrentPrice = 438.20m, StrikePrice = 420m, Expiry = DateTime.UtcNow.AddDays(16), DaysToExpiry = 16, Premium = 3.25m, Breakeven = 416.75m, Confidence = 0.68m, ExpectedGrowthPercent = 1.9m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "GOOGL", CurrentPrice = 192.80m, StrikePrice = 185m, Expiry = DateTime.UtcNow.AddDays(14), DaysToExpiry = 14, Premium = 1.45m, Breakeven = 183.55m, Confidence = 0.71m, ExpectedGrowthPercent = 2.4m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "NVDA", CurrentPrice = 134.50m, StrikePrice = 125m, Expiry = DateTime.UtcNow.AddDays(21), DaysToExpiry = 21, Premium = 2.15m, Breakeven = 122.85m, Confidence = 0.85m, ExpectedGrowthPercent = 4.2m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-            new() { Symbol = "NVDA", CurrentPrice = 134.50m, StrikePrice = 120m, Expiry = DateTime.UtcNow.AddDays(14), DaysToExpiry = 14, Premium = 1.80m, Breakeven = 118.20m, Confidence = 0.79m, ExpectedGrowthPercent = 3.8m, StrategyName = "ShortTermPutStrategy", ScannedAt = DateTime.UtcNow, IsActive = true },
-        };
-
-        await _recommendationRepository.AddRangeAsync(testData);
-        _logger.LogInformation("Seeded {Count} test recommendations", testData.Count);
-
-        return Ok(new { message = $"Seeded {testData.Count} test recommendations" });
-    }
-
-    private static PutRecommendationDto MapToDto(Data.Entities.PutRecommendation entity) => new()
+    private static StockDataDto MapStockDataToDto(Data.Entities.StockData entity) => new()
     {
         Id = entity.Id,
         Symbol = entity.Symbol,
+        ModificationTime = entity.ModificationTime,
+
+        // SimFin metrics
+        PiotroskiFScore = entity.PiotroskiFScore,
+        AltmanZScore = entity.AltmanZScore,
+        ROA = entity.ROA,
+        DebtToEquity = entity.DebtToEquity,
+        CurrentRatio = entity.CurrentRatio,
+        MarketCapBillions = entity.MarketCapBillions,
+
+        // Options data
         CurrentPrice = entity.CurrentPrice,
         StrikePrice = entity.StrikePrice,
         Expiry = entity.Expiry,
@@ -127,8 +126,17 @@ public class RecommendationsController : BaseController
         Confidence = entity.Confidence,
         ExpectedGrowthPercent = entity.ExpectedGrowthPercent,
         StrategyName = entity.StrategyName,
-        ScannedAt = entity.ScannedAt,
-        PiotroskiFScore = entity.PiotroskiFScore,
-        AltmanZScore = entity.AltmanZScore
+        ExanteSymbol = entity.ExanteSymbol,
+        OptionPrice = entity.OptionPrice,
+        Volume = entity.Volume,
+        OpenInterest = entity.OpenInterest,
+
+        // Calculated fields
+        PotentialReturn = entity.Premium.HasValue && entity.CurrentPrice.HasValue
+            ? (entity.Premium.Value / entity.CurrentPrice.Value) * 100
+            : 0,
+        OtmPercent = entity.StrikePrice.HasValue && entity.CurrentPrice.HasValue
+            ? ((entity.CurrentPrice.Value - entity.StrikePrice.Value) / entity.CurrentPrice.Value) * 100
+            : 0
     };
 }

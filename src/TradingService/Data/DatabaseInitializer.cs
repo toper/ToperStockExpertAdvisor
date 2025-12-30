@@ -12,6 +12,7 @@ public static class DatabaseInitializer
         await db.CreateTableAsync<ScanLog>(tableOptions: TableOptions.CreateIfNotExists);
         await db.CreateTableAsync<WatchlistItem>(tableOptions: TableOptions.CreateIfNotExists);
         await db.CreateTableAsync<CompanyFinancial>(tableOptions: TableOptions.CreateIfNotExists);
+        await db.CreateTableAsync<StockData>(tableOptions: TableOptions.CreateIfNotExists);
 
         await MigrateSchemaAsync(db);
         await CreateIndexesAsync(db);
@@ -94,5 +95,31 @@ public static class DatabaseInitializer
             CREATE INDEX IF NOT EXISTS IX_CompanyFinancials_FetchedAt
             ON CompanyFinancials (FetchedAt)";
         await db.ExecuteAsync(fetchedAtIndexSql);
+
+        // ==================== StockData Indexes ====================
+
+        // Create unique index on Symbol for StockData (one record per symbol)
+        var stockDataSymbolIndexSql = @"
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_StockData_Symbol
+            ON StockData (Symbol)";
+        await db.ExecuteAsync(stockDataSymbolIndexSql);
+
+        // Create index on ModificationTime for retention cleanup and sorting
+        var stockDataModTimeIndexSql = @"
+            CREATE INDEX IF NOT EXISTS IX_StockData_ModificationTime
+            ON StockData (ModificationTime DESC)";
+        await db.ExecuteAsync(stockDataModTimeIndexSql);
+
+        // Create index on PiotroskiFScore for pre-filtering (F-Score > 7)
+        var stockDataFScoreIndexSql = @"
+            CREATE INDEX IF NOT EXISTS IX_StockData_PiotroskiFScore
+            ON StockData (PiotroskiFScore DESC)";
+        await db.ExecuteAsync(stockDataFScoreIndexSql);
+
+        // Create index on Confidence for sorting recommendations
+        var stockDataConfidenceIndexSql = @"
+            CREATE INDEX IF NOT EXISTS IX_StockData_Confidence
+            ON StockData (Confidence DESC)";
+        await db.ExecuteAsync(stockDataConfidenceIndexSql);
     }
 }

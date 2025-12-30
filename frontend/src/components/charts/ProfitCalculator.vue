@@ -11,18 +11,18 @@ const contractMultiplier = 100 // 1 contract = 100 shares
 
 // Calculations
 const maxProfit = computed(() => {
-  return props.recommendation.premium * contracts.value * contractMultiplier
+  return (props.recommendation.premium ?? 0) * contracts.value * contractMultiplier
 })
 
 const maxLoss = computed(() => {
   // Max loss = (Strike - Premium) * contracts * 100
   // If assigned, you buy shares at strike price
-  return (props.recommendation.strikePrice - props.recommendation.premium) * contracts.value * contractMultiplier
+  return ((props.recommendation.strikePrice ?? 0) - (props.recommendation.premium ?? 0)) * contracts.value * contractMultiplier
 })
 
 const marginRequired = computed(() => {
   // Rough margin requirement: 20% of strike price * contracts * 100
-  return props.recommendation.strikePrice * 0.20 * contracts.value * contractMultiplier
+  return (props.recommendation.strikePrice ?? 0) * 0.20 * contracts.value * contractMultiplier
 })
 
 const returnOnMargin = computed(() => {
@@ -31,17 +31,19 @@ const returnOnMargin = computed(() => {
 })
 
 const annualizedReturn = computed(() => {
-  if (props.recommendation.daysToExpiry === 0) return 0
-  return (returnOnMargin.value * 365) / props.recommendation.daysToExpiry
+  const days = props.recommendation.daysToExpiry ?? 0
+  if (days === 0) return 0
+  return (returnOnMargin.value * 365) / days
 })
 
 const breakeven = computed(() => {
-  return props.recommendation.strikePrice - props.recommendation.premium
+  return (props.recommendation.strikePrice ?? 0) - (props.recommendation.premium ?? 0)
 })
 
 const otmPercent = computed(() => {
-  if (props.recommendation.currentPrice === 0) return 0
-  return ((props.recommendation.currentPrice - props.recommendation.strikePrice) / props.recommendation.currentPrice) * 100
+  const currentPrice = props.recommendation.currentPrice ?? 0
+  if (currentPrice === 0) return 0
+  return ((currentPrice - (props.recommendation.strikePrice ?? 0)) / currentPrice) * 100
 })
 </script>
 
@@ -69,19 +71,19 @@ const otmPercent = computed(() => {
     <div class="grid grid-cols-2 gap-4 mb-6 text-sm">
       <div>
         <span class="text-gray-500">Strike Price:</span>
-        <span class="ml-2 font-medium">${{ recommendation.strikePrice.toFixed(2) }}</span>
+        <span class="ml-2 font-medium">${{ (recommendation.strikePrice ?? 0).toFixed(2) }}</span>
       </div>
       <div>
         <span class="text-gray-500">Premium:</span>
-        <span class="ml-2 font-medium">${{ recommendation.premium.toFixed(2) }}</span>
+        <span class="ml-2 font-medium">${{ (recommendation.premium ?? 0).toFixed(2) }}</span>
       </div>
       <div>
         <span class="text-gray-500">Current Price:</span>
-        <span class="ml-2 font-medium">${{ recommendation.currentPrice.toFixed(2) }}</span>
+        <span class="ml-2 font-medium">${{ (recommendation.currentPrice ?? 0).toFixed(2) }}</span>
       </div>
       <div>
         <span class="text-gray-500">Days to Expiry:</span>
-        <span class="ml-2 font-medium">{{ recommendation.daysToExpiry }}</span>
+        <span class="ml-2 font-medium">{{ recommendation.daysToExpiry ?? 0 }}</span>
       </div>
     </div>
 

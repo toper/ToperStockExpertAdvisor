@@ -19,7 +19,7 @@ public class BulkFinancialDataProcessor : IBulkFinancialDataProcessor
 {
     private readonly ISimFinDataProvider _simFinProvider;
     private readonly IFinancialHealthService _financialHealthService;
-    private readonly ICompanyFinancialRepository _repository;
+    private readonly IStockDataRepository _stockDataRepository;
     private readonly ILogger<BulkFinancialDataProcessor> _logger;
     private readonly AppSettings _appSettings;
     private readonly string _simFinCacheDir;
@@ -27,13 +27,13 @@ public class BulkFinancialDataProcessor : IBulkFinancialDataProcessor
     public BulkFinancialDataProcessor(
         ISimFinDataProvider simFinProvider,
         IFinancialHealthService financialHealthService,
-        ICompanyFinancialRepository repository,
+        IStockDataRepository stockDataRepository,
         ILogger<BulkFinancialDataProcessor> logger,
         IOptions<AppSettings> appSettings)
     {
         _simFinProvider = simFinProvider;
         _financialHealthService = financialHealthService;
-        _repository = repository;
+        _stockDataRepository = stockDataRepository;
         _logger = logger;
         _appSettings = appSettings.Value;
         _simFinCacheDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "simfin");
@@ -95,8 +95,8 @@ public class BulkFinancialDataProcessor : IBulkFinancialDataProcessor
                         batch,
                         cancellationToken);
 
-                    // Map to CompanyFinancial entities
-                    var financials = new List<CompanyFinancial>();
+                    // Map to StockData entities (SimFin fields only)
+                    var stockDataList = new List<StockData>();
                     var fetchedAt = DateTime.UtcNow;
 
                     foreach (var (symbol, metrics) in metricsMap)
@@ -106,22 +106,22 @@ public class BulkFinancialDataProcessor : IBulkFinancialDataProcessor
                             // Get the report date from the CSV (current period)
                             var reportDate = await GetMostRecentReportDateAsync(symbol, cancellationToken);
 
-                            var financial = new CompanyFinancial
+                            var stockData = new StockData
                             {
                                 Symbol = symbol,
+                                ModificationTime = fetchedAt,
+                                SimFinUpdatedAt = fetchedAt,
                                 ReportDate = reportDate ?? DateTime.UtcNow.AddMonths(-3), // Default to 3 months ago if not found
-                                FetchedAt = fetchedAt,
                                 PiotroskiFScore = metrics.PiotroskiFScore,
                                 AltmanZScore = metrics.AltmanZScore,
                                 ROA = metrics.ROA,
                                 DebtToEquity = metrics.DebtToEquity,
                                 CurrentRatio = metrics.CurrentRatio,
                                 MarketCapBillions = metrics.MarketCapBillions,
-                                // Add fundamental data fields if available
-                                // (These would need to be added to FinancialHealthMetrics or fetched separately)
+                                // Fundamental data fields not available from FinancialHealthMetrics - leave as null
                             };
 
-                            financials.Add(financial);
+                            stockDataList.Add(stockData);
 
                             // Count healthy vs unhealthy
                             if (metrics.PiotroskiFScore > _appSettings.FinancialHealth.MinPiotroskiFScore)
@@ -140,13 +140,13 @@ public class BulkFinancialDataProcessor : IBulkFinancialDataProcessor
                         }
                     }
 
-                    // Bulk save to database
-                    if (financials.Any())
+                    // Bulk UPSERT to StockData
+                    if (stockDataList.Any())
                     {
-                        await _repository.BulkInsertOrUpdateAsync(financials, cancellationToken);
+                        await _stockDataRepository.BulkUpsertSimFinDataAsync(stockDataList, cancellationToken);
                         _logger.LogInformation(
                             "Saved batch {BatchNumber}/{TotalBatches}: {Saved} records (Total healthy: {Healthy}, unhealthy: {Unhealthy}, failed: {Failed})",
-                            batchNumber, batches.Count, financials.Count, healthyCount, unhealthyCount, failedCount);
+                            batchNumber, batches.Count, stockDataList.Count, healthyCount, unhealthyCount, failedCount);
                     }
                 }
                 catch (Exception ex)

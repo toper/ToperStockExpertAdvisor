@@ -43,8 +43,8 @@ public static class ServicesConfiguration
         builder.Services.AddSingleton<IDbContextFactory>(sp => new DbContextFactory(connectionString));
 
         // Repositories - changed to Singleton for use in background workers
-        builder.Services.AddSingleton<IRecommendationRepository, RecommendationRepository>();
-        builder.Services.AddSingleton<ICompanyFinancialRepository, CompanyFinancialRepository>();
+        builder.Services.AddSingleton<IStockDataRepository, StockDataRepository>();
+        builder.Services.AddSingleton<ICompanyFinancialRepository, CompanyFinancialRepository>(); // Keep for now (used by tests)
 
         // Bulk Financial Data Processor
         builder.Services.AddSingleton<IBulkFinancialDataProcessor, BulkFinancialDataProcessor>();
