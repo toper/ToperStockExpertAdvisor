@@ -16,6 +16,8 @@ public class DailyScanServiceTests
     private readonly Mock<TradingService.Data.IDbContextFactory> _dbFactoryMock;
     private readonly Mock<ILogger<DailyScanService>> _loggerMock;
     private readonly Mock<IFinancialHealthService> _financialHealthServiceMock;
+    private readonly Mock<ICompanyFinancialRepository> _companyFinancialRepositoryMock;
+    private readonly Mock<IBulkFinancialDataProcessor> _bulkFinancialDataProcessorMock;
     private readonly DailyScanService _service;
 
     public DailyScanServiceTests()
@@ -26,6 +28,8 @@ public class DailyScanServiceTests
         _dbFactoryMock = new Mock<TradingService.Data.IDbContextFactory>();
         _loggerMock = new Mock<ILogger<DailyScanService>>();
         _financialHealthServiceMock = new Mock<IFinancialHealthService>();
+        _companyFinancialRepositoryMock = new Mock<ICompanyFinancialRepository>();
+        _bulkFinancialDataProcessorMock = new Mock<IBulkFinancialDataProcessor>();
 
         // Setup financial health service mock
         _financialHealthServiceMock
@@ -40,12 +44,23 @@ public class DailyScanServiceTests
             .Setup(x => x.MeetsHealthRequirements(It.IsAny<FinancialHealthMetrics>()))
             .Returns(true);
 
+        // Setup company financial repository mock (data is fresh - no bulk processing needed)
+        _companyFinancialRepositoryMock
+            .Setup(x => x.IsDataStaleAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
         var appSettings = Options.Create(new AppSettings
         {
             Watchlist = ["SPY", "QQQ"],
             Strategy = new StrategySettings
             {
                 MinConfidence = 0.6m
+            },
+            FinancialHealth = new FinancialHealthSettings
+            {
+                EnablePreFiltering = false, // Disable pre-filtering in tests
+                MinPiotroskiFScore = 7m,
+                DataRefreshDays = 7
             }
         });
 
@@ -56,7 +71,9 @@ public class DailyScanServiceTests
             _dbFactoryMock.Object,
             _loggerMock.Object,
             appSettings,
-            _financialHealthServiceMock.Object);
+            _financialHealthServiceMock.Object,
+            _companyFinancialRepositoryMock.Object,
+            _bulkFinancialDataProcessorMock.Object);
     }
 
     [Fact]

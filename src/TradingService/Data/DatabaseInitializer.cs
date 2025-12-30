@@ -11,8 +11,10 @@ public static class DatabaseInitializer
         await db.CreateTableAsync<PutRecommendation>(tableOptions: TableOptions.CreateIfNotExists);
         await db.CreateTableAsync<ScanLog>(tableOptions: TableOptions.CreateIfNotExists);
         await db.CreateTableAsync<WatchlistItem>(tableOptions: TableOptions.CreateIfNotExists);
+        await db.CreateTableAsync<CompanyFinancial>(tableOptions: TableOptions.CreateIfNotExists);
 
         await MigrateSchemaAsync(db);
+        await CreateIndexesAsync(db);
     }
 
     private static async Task MigrateSchemaAsync(TradingDbContext db)
@@ -70,5 +72,27 @@ public static class DatabaseInitializer
         {
             await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN OpenInterest INTEGER NULL");
         }
+    }
+
+    private static async Task CreateIndexesAsync(TradingDbContext db)
+    {
+        // Create unique index on (Symbol, ReportDate) for CompanyFinancials
+        // This prevents duplicate entries for the same company and reporting period
+        var uniqueIndexSql = @"
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_CompanyFinancials_Symbol_ReportDate
+            ON CompanyFinancials (Symbol, ReportDate)";
+        await db.ExecuteAsync(uniqueIndexSql);
+
+        // Create index on PiotroskiFScore for fast filtering (F-Score > 7)
+        var fscoreIndexSql = @"
+            CREATE INDEX IF NOT EXISTS IX_CompanyFinancials_PiotroskiFScore
+            ON CompanyFinancials (PiotroskiFScore)";
+        await db.ExecuteAsync(fscoreIndexSql);
+
+        // Create index on FetchedAt for checking data staleness
+        var fetchedAtIndexSql = @"
+            CREATE INDEX IF NOT EXISTS IX_CompanyFinancials_FetchedAt
+            ON CompanyFinancials (FetchedAt)";
+        await db.ExecuteAsync(fetchedAtIndexSql);
     }
 }

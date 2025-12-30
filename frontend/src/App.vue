@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import StatsCards from '@/components/recommendations/StatsCards.vue'
 import StrategySelector from '@/components/recommendations/StrategySelector.vue'
+import DateFilter from '@/components/recommendations/DateFilter.vue'
 import RecommendationsTable from '@/components/recommendations/RecommendationsTable.vue'
 import RecommendationsList from '@/components/recommendations/RecommendationsList.vue'
+import ScanProgress from '@/components/recommendations/ScanProgress.vue'
+import ScanNotificationToast from '@/components/recommendations/ScanNotificationToast.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ErrorAlert from '@/components/common/ErrorAlert.vue'
 import { Squares2X2Icon, TableCellsIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
@@ -13,14 +16,71 @@ import { Squares2X2Icon, TableCellsIcon, ArrowPathIcon } from '@heroicons/vue/24
 const store = useRecommendationsStore()
 const viewMode = ref<'table' | 'cards'>('table')
 const selectedStrategy = ref<string | null>(null)
-
-const filteredRecommendations = computed(() => {
-  if (!selectedStrategy.value) return store.sortedRecommendations
-  return store.sortedRecommendations.filter(r => r.strategyName === selectedStrategy.value)
+const dateRange = ref<{ from: Date | null; to: Date | null }>({ from: null, to: null })
+const filters = ref({
+  minConfidence: 0.8,
+  minFScore: 7,
+  minZScore: 3.0,
+  minDays: 14,
+  maxDays: 21
 })
 
-onMounted(() => {
+const filteredRecommendations = computed(() => {
+  let filtered = store.sortedRecommendations
+
+  // Filter by strategy
+  if (selectedStrategy.value) {
+    filtered = filtered.filter(r => r.strategyName === selectedStrategy.value)
+  }
+
+  // Filter by scan date
+  if (dateRange.value.from || dateRange.value.to) {
+    filtered = filtered.filter(r => {
+      const scannedDate = new Date(r.scannedAt)
+      if (dateRange.value.from && scannedDate < dateRange.value.from) return false
+      if (dateRange.value.to && scannedDate > dateRange.value.to) return false
+      return true
+    })
+  }
+
+  // Filter by confidence
+  if (filters.value.minConfidence > 0) {
+    filtered = filtered.filter(r => r.confidence >= filters.value.minConfidence)
+  }
+
+  // Filter by F-Score
+  if (filters.value.minFScore > 0 && filtered.length > 0) {
+    filtered = filtered.filter(r => (r.piotroskiFScore ?? 0) >= filters.value.minFScore)
+  }
+
+  // Filter by Z-Score
+  if (filters.value.minZScore > 0 && filtered.length > 0) {
+    filtered = filtered.filter(r => (r.altmanZScore ?? 0) >= filters.value.minZScore)
+  }
+
+  // Filter by days to expiry
+  if (filters.value.minDays > 0 || filters.value.maxDays > 0) {
+    filtered = filtered.filter(r => {
+      if (filters.value.minDays > 0 && r.daysToExpiry < filters.value.minDays) return false
+      if (filters.value.maxDays > 0 && r.daysToExpiry > filters.value.maxDays) return false
+      return true
+    })
+  }
+
+  return filtered
+})
+
+onMounted(async () => {
+  // Start SignalR connection for real-time scan updates
+  await store.startSignalR()
+
+  // Fetch initial recommendations
   store.fetchActiveRecommendations()
+})
+
+onUnmounted(async () => {
+  // Clean up SignalR connection
+  await store.stopSignalR()
 })
 
 function refresh() {
@@ -29,6 +89,10 @@ function refresh() {
 
 function handleStrategySelect(strategy: string | null) {
   selectedStrategy.value = strategy
+}
+
+function handleDateRangeUpdate(range: { from: Date | null; to: Date | null }) {
+  dateRange.value = range
 }
 </script>
 
@@ -78,17 +142,133 @@ function handleStrategySelect(strategy: string | null) {
         @close="store.clearError"
       />
 
+      <ScanProgress />
+
       <StatsCards
         :recommendations="store.recommendations"
         :loading="store.loading"
       />
 
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <StrategySelector
           :recommendations="store.recommendations"
           :selectedStrategy="selectedStrategy"
           @update:selectedStrategy="handleStrategySelect"
         />
+        <DateFilter
+          @update:dateRange="handleDateRangeUpdate"
+        />
+      </div>
+
+      <!-- Advanced Filters -->
+      <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Advanced Filters</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <!-- Confidence -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Min Confidence: {{ (filters.minConfidence * 100).toFixed(0) }}%
+            </label>
+            <input
+              v-model.number="filters.minConfidence"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <div class="flex justify-between text-xs text-gray-500 mt-1">
+              <span>0%</span>
+              <span>100%</span>
+            </div>
+          </div>
+
+          <!-- F-Score -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Min F-Score: {{ filters.minFScore }}
+            </label>
+            <input
+              v-model.number="filters.minFScore"
+              type="range"
+              min="0"
+              max="9"
+              step="1"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <div class="flex justify-between text-xs text-gray-500 mt-1">
+              <span>0</span>
+              <span>9</span>
+            </div>
+          </div>
+
+          <!-- Z-Score -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Min Z-Score: {{ filters.minZScore.toFixed(1) }}
+            </label>
+            <input
+              v-model.number="filters.minZScore"
+              type="range"
+              min="0"
+              max="5"
+              step="0.1"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <div class="flex justify-between text-xs text-gray-500 mt-1">
+              <span>0.0</span>
+              <span>5.0</span>
+            </div>
+          </div>
+
+          <!-- Min Days -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Min Days: {{ filters.minDays }}
+            </label>
+            <input
+              v-model.number="filters.minDays"
+              type="range"
+              min="0"
+              max="90"
+              step="1"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <div class="flex justify-between text-xs text-gray-500 mt-1">
+              <span>0</span>
+              <span>90</span>
+            </div>
+          </div>
+
+          <!-- Max Days -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Max Days: {{ filters.maxDays }}
+            </label>
+            <input
+              v-model.number="filters.maxDays"
+              type="range"
+              min="0"
+              max="90"
+              step="1"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <div class="flex justify-between text-xs text-gray-500 mt-1">
+              <span>0</span>
+              <span>90</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reset button -->
+        <div class="mt-4 flex justify-end">
+          <button
+            @click="filters = { minConfidence: 0.8, minFScore: 7, minZScore: 3.0, minDays: 14, maxDays: 21 }"
+            class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Reset Filters
+          </button>
+        </div>
       </div>
 
       <div v-if="store.loading" class="py-12">
@@ -111,5 +291,8 @@ function handleStrategySelect(strategy: string | null) {
         Showing {{ filteredRecommendations.length }} of {{ store.totalCount }} recommendations
       </div>
     </div>
+
+    <!-- Toast Notifications -->
+    <ScanNotificationToast />
   </AppLayout>
 </template>

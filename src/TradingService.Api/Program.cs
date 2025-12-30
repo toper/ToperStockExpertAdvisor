@@ -101,6 +101,10 @@ try
 
     // Local endpoints - served directly when Ocelot doesn't match
     app.MapGet("/", () => Results.Redirect("/swagger"));
+
+    // SignalR Hub for real-time scan progress
+    app.MapHub<TradingService.Api.Hubs.ScanProgressHub>("/hubs/scan-progress");
+
     app.MapControllers();
     app.MapHealthChecks("/health");
     app.MapHealthChecks("/health/ready");

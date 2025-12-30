@@ -8,7 +8,7 @@ public class AppSettings
     public string ScanTime { get; set; } = "04:00";
 
     [Required]
-    public List<string> Watchlist { get; set; } = ["SPY", "QQQ", "AAPL", "MSFT", "GOOGL", "NVDA"];
+    public List<string> Watchlist { get; set; } = [];
 
     [Required]
     public StrategySettings Strategy { get; set; } = new();
@@ -44,7 +44,7 @@ public class StrategySettings
     public int MaxExpiryDays { get; set; } = 21;
 
     [Range(0, 1)]
-    public decimal MinConfidence { get; set; } = 0.6m;
+    public decimal MinConfidence { get; set; } = 0.0m;
 }
 
 public class ConsulSettings
@@ -99,7 +99,7 @@ public class OptionsDiscoverySettings
     /// <summary>
     /// Enable dynamic options discovery from Exante (replaces static watchlist)
     /// </summary>
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Use fast /md/3.0/groups endpoint instead of parsing 1.6M options
@@ -124,7 +124,7 @@ public class OptionsDiscoverySettings
     /// <summary>
     /// Fallback to static watchlist if discovery fails
     /// </summary>
-    public bool FallbackToWatchlist { get; set; } = true;
+    public bool FallbackToWatchlist { get; set; } = false;
 
     /// <summary>
     /// Fetch both PUTs and CALLs (for future use)
@@ -142,7 +142,7 @@ public class FinancialHealthSettings
     /// <summary>
     /// Enable pre-filtering symbols by financial health before fetching expensive market data
     /// </summary>
-    public bool EnablePreFiltering { get; set; } = true;
+    public bool EnablePreFiltering { get; set; } = false;
 
     /// <summary>
     /// Minimum Piotroski F-Score (0-9 scale, higher is better)
@@ -160,6 +160,18 @@ public class FinancialHealthSettings
     /// </summary>
     [Range(1, 20)]
     public int BatchConcurrency { get; set; } = 5;
+
+    /// <summary>
+    /// Number of symbols to process per batch during bulk processing
+    /// </summary>
+    [Range(10, 500)]
+    public int BulkProcessingBatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// Number of days before bulk financial data is considered stale and needs refresh
+    /// </summary>
+    [Range(1, 30)]
+    public int DataRefreshDays { get; set; } = 7;
 }
 
 public class RateLimitingSettings

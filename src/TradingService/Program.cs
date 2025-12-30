@@ -214,6 +214,10 @@ try
 
             // Repositories
             services.AddSingleton<IRecommendationRepository, RecommendationRepository>();
+            services.AddSingleton<ICompanyFinancialRepository, CompanyFinancialRepository>();
+
+            // Bulk Financial Data Processor
+            services.AddSingleton<IBulkFinancialDataProcessor, BulkFinancialDataProcessor>();
 
             // Strategies (register all strategies)
             services.AddSingleton<IStrategy, ShortTermPutStrategy>();

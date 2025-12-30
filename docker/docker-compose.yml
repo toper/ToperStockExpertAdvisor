@@ -50,32 +50,10 @@ services:
       - trading-network
     restart: unless-stopped
 
-  # Trading Service - Worker (Daily Scanner)
-  trading-service:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.TradingService
-    container_name: trading-service
-    env_file:
-      - ../.env
-    environment:
-      - DOTNET_ENVIRONMENT=Production
-      - AppSettings__Consul__Host=http://consul:8500
-      - AppSettings__Database__ConnectionString=Data Source=/app/data/trading.db
-      - Loki__Endpoint=http://loki:3100
-    depends_on:
-      consul:
-        condition: service_healthy
-      loki:
-        condition: service_started
-    volumes:
-      - ../data/trading:/app/data
-      - ../logs/trading-service:/app/logs
-    networks:
-      - trading-network
-    restart: unless-stopped
+  # NOTE: TradingService worker has been integrated into TradingService.Api
+  # The background scan worker now runs within trading-api for direct SignalR access
 
-  # Trading API - REST API + Ocelot Gateway
+  # Trading API - REST API + Ocelot Gateway + Background Scanner
   # Single port architecture:
   # - /api/* -> local controllers (no Ocelot routing)
   # - /gateway/* -> external microservices via Ocelot + Consul
@@ -99,8 +77,6 @@ services:
     depends_on:
       consul:
         condition: service_healthy
-      trading-service:
-        condition: service_started
       loki:
         condition: service_started
     volumes:

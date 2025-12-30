@@ -21,6 +21,9 @@ public class DailyScanService : IDailyScanService
     private readonly AppSettings _appSettings;
     private readonly IOptionsDiscoveryService? _optionsDiscoveryService;
     private readonly IFinancialHealthService _financialHealthService;
+    private readonly IScanProgressNotifier? _scanProgressNotifier;
+    private readonly ICompanyFinancialRepository _companyFinancialRepository;
+    private readonly IBulkFinancialDataProcessor _bulkFinancialDataProcessor;
 
     public DailyScanService(
         IMarketDataAggregator marketDataAggregator,
@@ -30,7 +33,10 @@ public class DailyScanService : IDailyScanService
         ILogger<DailyScanService> logger,
         IOptions<AppSettings> appSettings,
         IFinancialHealthService financialHealthService,
-        IOptionsDiscoveryService? optionsDiscoveryService = null)
+        ICompanyFinancialRepository companyFinancialRepository,
+        IBulkFinancialDataProcessor bulkFinancialDataProcessor,
+        IOptionsDiscoveryService? optionsDiscoveryService = null,
+        IScanProgressNotifier? scanProgressNotifier = null)
     {
         _marketDataAggregator = marketDataAggregator;
         _strategyLoader = strategyLoader;
@@ -39,7 +45,10 @@ public class DailyScanService : IDailyScanService
         _logger = logger;
         _appSettings = appSettings.Value;
         _financialHealthService = financialHealthService;
+        _companyFinancialRepository = companyFinancialRepository;
+        _bulkFinancialDataProcessor = bulkFinancialDataProcessor;
         _optionsDiscoveryService = optionsDiscoveryService;
+        _scanProgressNotifier = scanProgressNotifier;
     }
 
     public async Task ExecuteScanAsync(CancellationToken cancellationToken)
@@ -68,7 +77,34 @@ public class DailyScanService : IDailyScanService
 
             _logger.LogInformation("Loaded {Count} strategies for scanning", strategies.Count);
 
-            // Phase 1: Get symbols to scan (now uses fast /groups endpoint)
+            // NEW: Step 0 - Process bulk financial data if stale (BLOCKS scan until complete)
+            _logger.LogInformation("Checking bulk financial data freshness...");
+            var dataRefreshDays = _appSettings.FinancialHealth.DataRefreshDays;
+            var isStale = await _companyFinancialRepository.IsDataStaleAsync(
+                TimeSpan.FromDays(dataRefreshDays),
+                cancellationToken);
+
+            if (isStale)
+            {
+                _logger.LogInformation("Bulk financial data is stale, processing ALL companies from SimFin...");
+                _logger.LogInformation("This may take 30-60 minutes for ~4,447 symbols. Scan will start after completion.");
+
+                // BLOCKING CALL - waits for bulk processing to complete
+                var bulkResult = await _bulkFinancialDataProcessor.ProcessAllCompaniesAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Bulk processing completed: {Total} symbols processed, {Healthy} with F-Score > {MinFScore}, Duration: {Duration}s",
+                    bulkResult.TotalSymbolsProcessed,
+                    bulkResult.HealthySymbols,
+                    _appSettings.FinancialHealth.MinPiotroskiFScore,
+                    bulkResult.ProcessingTime.TotalSeconds);
+            }
+            else
+            {
+                _logger.LogInformation("Bulk financial data is fresh (< {Days} days old), using cached data", dataRefreshDays);
+            }
+
+            // Phase 1: Get symbols to scan (now uses fast /groups endpoint + pre-filtering)
             var allSymbols = await GetSymbolsToScanAsync(cancellationToken);
             if (!allSymbols.Any())
             {
@@ -78,51 +114,16 @@ public class DailyScanService : IDailyScanService
 
             _logger.LogInformation("Discovered {Count} symbols for scanning", allSymbols.Count);
 
-            // Phase 2: Pre-filter by financial health (NEW - BATCH)
+            // NO PRE-FILTERING - Scan all symbols, filtering will be done in UI
             var symbols = allSymbols;
-            if (_appSettings.FinancialHealth.EnablePreFiltering)
-            {
-                _logger.LogInformation("Pre-filtering symbols by financial health...");
-
-                var healthMetrics = await _financialHealthService.CalculateMetricsBatchAsync(
-                    allSymbols, cancellationToken);
-
-                var healthySymbols = healthMetrics
-                    .Where(kvp => _financialHealthService.MeetsHealthRequirements(kvp.Value))
-                    .Select(kvp => kvp.Key)
-                    .ToList();
-
-                _logger.LogInformation(
-                    "Pre-filtered to {Healthy}/{Total} healthy symbols (F-Score ≥ {MinF}, Z-Score ≥ {MinZ})",
-                    healthySymbols.Count, allSymbols.Count,
-                    _appSettings.FinancialHealth.MinPiotroskiFScore,
-                    _appSettings.FinancialHealth.MinAltmanZScore);
-
-                symbols = healthySymbols;
-
-                if (!symbols.Any())
-                {
-                    _logger.LogWarning("No symbols met financial health requirements. Scan aborted.");
-                    scanLog.CompletedAt = DateTime.UtcNow;
-                    scanLog.Status = "CompletedNoHealthySymbols";
-                    using (var db = _dbContextFactory.Create())
-                    {
-                        await db.ScanLogs
-                            .Where(s => s.Id == scanLog.Id)
-                            .Set(s => s.CompletedAt, scanLog.CompletedAt)
-                            .Set(s => s.Status, scanLog.Status)
-                            .UpdateAsync();
-                    }
-                    return;
-                }
-            }
-            else
-            {
-                _logger.LogInformation("Financial health pre-filtering is disabled");
-            }
-
-            _logger.LogInformation("Scanning {Count} symbols: {Symbols}",
+            _logger.LogInformation("Scanning ALL {Count} symbols (no pre-filtering): {Symbols}",
                 symbols.Count, string.Join(", ", symbols.Take(20)));
+
+            // Notify clients that scan has started
+            if (_scanProgressNotifier != null)
+            {
+                await _scanProgressNotifier.NotifyScanStartedAsync(scanLog.Id, symbols.Count);
+            }
 
             // Deactivate old recommendations before starting new scan
             await _recommendationRepository.DeactivateOldRecommendationsAsync(DateTime.UtcNow.AddDays(-1));
@@ -140,6 +141,18 @@ public class DailyScanService : IDailyScanService
                     _logger.LogInformation("Scan cancelled by user");
                     scanLog.Status = "Cancelled";
                     break;
+                }
+
+                // Notify clients that we're scanning this symbol
+                if (_scanProgressNotifier != null)
+                {
+                    await _scanProgressNotifier.NotifySymbolScanningAsync(new Models.ScanProgressUpdate
+                    {
+                        Symbol = symbol,
+                        CurrentIndex = symbolsProcessed,
+                        TotalSymbols = symbols.Count,
+                        Status = "Scanning"
+                    });
                 }
 
                 try
@@ -188,6 +201,19 @@ public class DailyScanService : IDailyScanService
 
                     symbolsProcessed++;
 
+                    // Notify clients that symbol processing completed
+                    if (_scanProgressNotifier != null)
+                    {
+                        await _scanProgressNotifier.NotifySymbolCompletedAsync(new Models.ScanProgressUpdate
+                        {
+                            Symbol = symbol,
+                            CurrentIndex = symbolsProcessed,
+                            TotalSymbols = symbols.Count,
+                            Status = "Completed",
+                            RecommendationsCount = allRecommendations.Count(r => r.Symbol == symbol)
+                        });
+                    }
+
                     // Add a small delay to avoid overwhelming APIs
                     await Task.Delay(500, cancellationToken);
                 }
@@ -195,45 +221,48 @@ public class DailyScanService : IDailyScanService
                 {
                     _logger.LogError(ex, "Error processing symbol {Symbol}", symbol);
                     errors.Add($"{symbol}: {ex.Message}");
+
+                    // Notify clients of error
+                    if (_scanProgressNotifier != null)
+                    {
+                        await _scanProgressNotifier.NotifySymbolErrorAsync(new Models.ScanProgressUpdate
+                        {
+                            Symbol = symbol,
+                            CurrentIndex = symbolsProcessed,
+                            TotalSymbols = symbols.Count,
+                            Status = "Error",
+                            ErrorMessage = ex.Message
+                        });
+                    }
                 }
             }
 
-            // Save all recommendations
+            // Save ALL recommendations (NO FILTERING)
             var savedCount = 0;
             if (allRecommendations.Any())
             {
                 try
                 {
-                    // Filter for high-confidence recommendations only
-                    var highConfidenceRecommendations = allRecommendations
-                        .Where(r => r.Confidence >= _appSettings.Strategy.MinConfidence)
+                    // Save ALL recommendations, sort by confidence (but don't filter)
+                    var sortedRecommendations = allRecommendations
                         .OrderByDescending(r => r.Confidence)
                         .ThenBy(r => r.Symbol)
                         .ThenBy(r => r.DaysToExpiry)
                         .ToList();
 
-                    if (highConfidenceRecommendations.Any())
-                    {
-                        savedCount = await _recommendationRepository.AddRangeAsync(highConfidenceRecommendations);
+                    savedCount = await _recommendationRepository.AddRangeAsync(sortedRecommendations);
 
-                        _logger.LogInformation(
-                            "Saved {SavedCount} high-confidence recommendations out of {TotalCount} generated",
-                            savedCount, allRecommendations.Count);
+                    _logger.LogInformation(
+                        "Saved ALL {SavedCount} recommendations to database (no filtering)",
+                        savedCount);
 
-                        // Log top recommendations
-                        var topRecommendations = highConfidenceRecommendations
-                            .Take(10)
-                            .Select(r => $"{r.Symbol} PUT ${r.StrikePrice} {r.Expiry:MM/dd} (Conf: {r.Confidence:P})");
+                    // Log top recommendations by confidence
+                    var topRecommendations = sortedRecommendations
+                        .Take(10)
+                        .Select(r => $"{r.Symbol} PUT ${r.StrikePrice} {r.Expiry:MM/dd} (Conf: {r.Confidence:P})");
 
-                        _logger.LogInformation("Top recommendations: {Recommendations}",
-                            string.Join(", ", topRecommendations));
-                    }
-                    else
-                    {
-                        _logger.LogWarning(
-                            "All {Count} generated recommendations had confidence below threshold ({Threshold:P})",
-                            allRecommendations.Count, _appSettings.Strategy.MinConfidence);
-                    }
+                    _logger.LogInformation("Top 10 recommendations by confidence: {Recommendations}",
+                        string.Join(", ", topRecommendations));
                 }
                 catch (Exception ex)
                 {
@@ -281,6 +310,12 @@ public class DailyScanService : IDailyScanService
             {
                 _logger.LogWarning("Scan completed with {ErrorCount} errors:\n{Errors}",
                     errors.Count, string.Join("\n", errors));
+            }
+
+            // Notify clients that scan has completed
+            if (_scanProgressNotifier != null)
+            {
+                await _scanProgressNotifier.NotifyScanCompletedAsync(scanLog);
             }
         }
         catch (Exception ex)
@@ -353,6 +388,7 @@ public class DailyScanService : IDailyScanService
         }
 
         // EXISTING: Fall back to database or config watchlist
+        List<string> symbols;
         try
         {
             using var db = _dbContextFactory.Create();
@@ -365,16 +401,91 @@ public class DailyScanService : IDailyScanService
 
             if (watchlistSymbols.Any())
             {
-                return watchlistSymbols.Distinct().ToList();
+                symbols = watchlistSymbols.Distinct().ToList();
             }
-
-            // If watchlist is empty, use configuration
-            return _appSettings.Watchlist.ToList();
+            else
+            {
+                // If watchlist is empty, use configuration
+                symbols = _appSettings.Watchlist.ToList();
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error loading watchlist from database, using configuration");
-            return _appSettings.Watchlist.ToList();
+            symbols = _appSettings.Watchlist.ToList();
         }
+
+        // NEW: Pre-filter by F-Score > minFScore if enabled
+        if (_appSettings.FinancialHealth.EnablePreFiltering)
+        {
+            return await ApplyFinancialHealthFilterAsync(symbols, cancellationToken);
+        }
+
+        return symbols;
+    }
+
+    /// <summary>
+    /// Apply F-Score pre-filtering to reduce Exante API calls
+    /// Only scans symbols with F-Score > threshold
+    /// Fallback: Symbols not in SimFin database are scanned anyway
+    /// </summary>
+    private async Task<List<string>> ApplyFinancialHealthFilterAsync(
+        List<string> symbols,
+        CancellationToken cancellationToken)
+    {
+        var minFScore = _appSettings.FinancialHealth.MinPiotroskiFScore;
+        _logger.LogInformation("Pre-filtering {Count} symbols by F-Score > {MinScore}...",
+            symbols.Count, minFScore);
+
+        // Get symbols with F-Score > threshold from database
+        var healthySymbols = await _companyFinancialRepository.GetByFScoreThresholdAsync(
+            minFScore,
+            cancellationToken);
+
+        var healthySymbolSet = new HashSet<string>(
+            healthySymbols.Select(cf => cf.Symbol),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Partition symbols: healthy (in SimFin with F-Score > 7) and fallback (not in SimFin)
+        var filteredSymbols = new List<string>();
+        var fallbackSymbols = new List<string>();
+
+        foreach (var symbol in symbols)
+        {
+            if (healthySymbolSet.Contains(symbol))
+            {
+                // Has F-Score > threshold
+                filteredSymbols.Add(symbol);
+            }
+            else
+            {
+                // Check if symbol exists in SimFin database at all
+                var financial = await _companyFinancialRepository.GetBySymbolAsync(symbol, cancellationToken);
+                if (financial == null)
+                {
+                    // Not in SimFin database - FALLBACK: scan anyway (young/small companies)
+                    fallbackSymbols.Add(symbol);
+                    filteredSymbols.Add(symbol);
+                }
+                // else: Symbol exists in SimFin but F-Score <= threshold, skip it
+            }
+        }
+
+        _logger.LogInformation(
+            "Pre-filtering complete: {Original} → {Filtered} symbols ({Healthy} with F-Score > {MinScore}, {Fallback} fallback without SimFin data, {Skipped} skipped)",
+            symbols.Count,
+            filteredSymbols.Count,
+            filteredSymbols.Count - fallbackSymbols.Count,
+            minFScore,
+            fallbackSymbols.Count,
+            symbols.Count - filteredSymbols.Count);
+
+        if (fallbackSymbols.Any())
+        {
+            _logger.LogDebug("Fallback symbols (not in SimFin): {Symbols}",
+                string.Join(", ", fallbackSymbols.Take(10)));
+        }
+
+        return filteredSymbols;
     }
 }

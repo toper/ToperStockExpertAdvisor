@@ -60,7 +60,7 @@ function getStrategyColor(strategy: string): string {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg shadow p-4">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
     <h3 class="text-sm font-semibold text-gray-700 mb-3">Filter by Strategy</h3>
 
     <div class="space-y-2">
