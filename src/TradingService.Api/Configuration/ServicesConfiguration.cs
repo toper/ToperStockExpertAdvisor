@@ -44,7 +44,6 @@ public static class ServicesConfiguration
 
         // Repositories - changed to Singleton for use in background workers
         builder.Services.AddSingleton<IStockDataRepository, StockDataRepository>();
-        builder.Services.AddSingleton<ICompanyFinancialRepository, CompanyFinancialRepository>(); // Keep for now (used by tests)
 
         // Bulk Financial Data Processor
         builder.Services.AddSingleton<IBulkFinancialDataProcessor, BulkFinancialDataProcessor>();

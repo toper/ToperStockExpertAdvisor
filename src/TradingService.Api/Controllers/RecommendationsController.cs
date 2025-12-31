@@ -102,6 +102,31 @@ public class RecommendationsController : BaseController
         }
     }
 
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetStats()
+    {
+        try
+        {
+            _logger.LogInformation("Getting recommendations statistics");
+
+            // Get healthy stocks count (F-Score >= 7)
+            var healthyCount = await _stockDataRepository.GetHealthyCountAsync(7.0m);
+
+            var stats = new
+            {
+                HealthyStocksCount = healthyCount,
+                MinFScore = 7.0m
+            };
+
+            return Ok(stats);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting recommendations statistics");
+            return InternalServerError(new { error = "Error retrieving statistics" });
+        }
+    }
+
     private static StockDataDto MapStockDataToDto(Data.Entities.StockData entity) => new()
     {
         Id = entity.Id,

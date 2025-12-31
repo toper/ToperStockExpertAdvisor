@@ -18,17 +18,25 @@ public class FinancialHealthServiceTests
     private readonly Mock<ISimFinDataProvider> _simFinProviderMock;
     private readonly Mock<IMarketDataProvider> _marketDataProviderMock;
     private readonly FinancialHealthService _service;
+    private readonly Mock<IStockDataRepository> _stockDataRepositoryMock;
 
     public FinancialHealthServiceTests()
     {
         _loggerMock = new Mock<ILogger<FinancialHealthService>>();
         _simFinProviderMock = new Mock<ISimFinDataProvider>();
         _marketDataProviderMock = new Mock<IMarketDataProvider>();
+        _stockDataRepositoryMock = new Mock<IStockDataRepository>();
+
+        // Configure mock to return null (no cache) by default
+        _stockDataRepositoryMock
+            .Setup(x => x.GetBySymbolAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Data.Entities.StockData?)null);
 
         _service = new FinancialHealthService(
             _loggerMock.Object,
             _simFinProviderMock.Object,
-            _marketDataProviderMock.Object);
+            _marketDataProviderMock.Object,
+            _stockDataRepositoryMock.Object);
     }
 
     [Fact]

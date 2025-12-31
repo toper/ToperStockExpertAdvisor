@@ -8,94 +8,80 @@ public static class DatabaseInitializer
 {
     public static async Task InitializeAsync(TradingDbContext db)
     {
-        await db.CreateTableAsync<PutRecommendation>(tableOptions: TableOptions.CreateIfNotExists);
+        // Active tables (used in production)
         await db.CreateTableAsync<ScanLog>(tableOptions: TableOptions.CreateIfNotExists);
         await db.CreateTableAsync<WatchlistItem>(tableOptions: TableOptions.CreateIfNotExists);
-        await db.CreateTableAsync<CompanyFinancial>(tableOptions: TableOptions.CreateIfNotExists);
         await db.CreateTableAsync<StockData>(tableOptions: TableOptions.CreateIfNotExists);
 
-        await MigrateSchemaAsync(db);
+        // REMOVED: PutRecommendation (Recommendations table) - replaced by StockData
+        // REMOVED: CompanyFinancial - replaced by StockData
+
+        // Cleanup: Drop legacy tables if they exist
+        await DropLegacyTablesAsync(db);
+
+        // Add new columns to StockData for complete financial metrics
+        await MigrateStockDataSchemaAsync(db);
+
         await CreateIndexesAsync(db);
     }
 
-    private static async Task MigrateSchemaAsync(TradingDbContext db)
+    private static async Task DropLegacyTablesAsync(TradingDbContext db)
     {
-        // Check if PiotroskiFScore column exists in Recommendations table
-        var columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='PiotroskiFScore'";
-        var piotroskiExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
-
-        if (!piotroskiExists)
+        try
         {
-            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN PiotroskiFScore DECIMAL NULL");
+            // Drop Recommendations table (replaced by StockData)
+            await db.ExecuteAsync("DROP TABLE IF EXISTS Recommendations");
+
+            // Drop CompanyFinancials table (replaced by StockData)
+            await db.ExecuteAsync("DROP TABLE IF EXISTS CompanyFinancials");
+
+            // Drop related indexes
+            await db.ExecuteAsync("DROP INDEX IF EXISTS IX_CompanyFinancials_Symbol_ReportDate");
+            await db.ExecuteAsync("DROP INDEX IF EXISTS IX_CompanyFinancials_PiotroskiFScore");
+            await db.ExecuteAsync("DROP INDEX IF EXISTS IX_CompanyFinancials_FetchedAt");
         }
-
-        // Check if AltmanZScore column exists in Recommendations table
-        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='AltmanZScore'";
-        var altmanExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
-
-        if (!altmanExists)
+        catch (Exception ex)
         {
-            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN AltmanZScore DECIMAL NULL");
-        }
-
-        // Check if ExanteSymbol column exists in Recommendations table
-        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='ExanteSymbol'";
-        var exanteSymbolExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
-
-        if (!exanteSymbolExists)
-        {
-            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN ExanteSymbol TEXT NULL");
-        }
-
-        // Check if OptionPrice column exists in Recommendations table
-        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='OptionPrice'";
-        var optionPriceExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
-
-        if (!optionPriceExists)
-        {
-            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN OptionPrice DECIMAL NULL");
-        }
-
-        // Check if Volume column exists in Recommendations table
-        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='Volume'";
-        var volumeExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
-
-        if (!volumeExists)
-        {
-            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN Volume INTEGER NULL");
-        }
-
-        // Check if OpenInterest column exists in Recommendations table
-        columnCheckSql = "SELECT COUNT(*) FROM pragma_table_info('Recommendations') WHERE name='OpenInterest'";
-        var openInterestExists = await db.ExecuteAsync<long>(columnCheckSql) > 0;
-
-        if (!openInterestExists)
-        {
-            await db.ExecuteAsync("ALTER TABLE Recommendations ADD COLUMN OpenInterest INTEGER NULL");
+            // Log but don't fail if tables don't exist or can't be dropped
+            Console.WriteLine($"Warning: Failed to drop legacy tables: {ex.Message}");
         }
     }
 
+    private static async Task MigrateStockDataSchemaAsync(TradingDbContext db)
+    {
+        try
+        {
+            // Add new financial metrics columns for complete F-Score and Z-Score calculations
+            var newColumns = new[]
+            {
+                ("RetainedEarnings", "DECIMAL NULL"),
+                ("TotalDebt", "DECIMAL NULL"),
+                ("EBITDA", "DECIMAL NULL"),
+                ("CurrentAssets", "DECIMAL NULL"),
+                ("CurrentLiabilities", "DECIMAL NULL")
+            };
+
+            foreach (var (columnName, columnType) in newColumns)
+            {
+                var checkSql = $"SELECT COUNT(*) FROM pragma_table_info('StockData') WHERE name='{columnName}'";
+                var exists = await db.ExecuteAsync<long>(checkSql) > 0;
+
+                if (!exists)
+                {
+                    await db.ExecuteAsync($"ALTER TABLE StockData ADD COLUMN {columnName} {columnType}");
+                    Console.WriteLine($"Added column {columnName} to StockData table");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Failed to migrate StockData schema: {ex.Message}");
+        }
+    }
+
+
     private static async Task CreateIndexesAsync(TradingDbContext db)
     {
-        // Create unique index on (Symbol, ReportDate) for CompanyFinancials
-        // This prevents duplicate entries for the same company and reporting period
-        var uniqueIndexSql = @"
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_CompanyFinancials_Symbol_ReportDate
-            ON CompanyFinancials (Symbol, ReportDate)";
-        await db.ExecuteAsync(uniqueIndexSql);
-
-        // Create index on PiotroskiFScore for fast filtering (F-Score > 7)
-        var fscoreIndexSql = @"
-            CREATE INDEX IF NOT EXISTS IX_CompanyFinancials_PiotroskiFScore
-            ON CompanyFinancials (PiotroskiFScore)";
-        await db.ExecuteAsync(fscoreIndexSql);
-
-        // Create index on FetchedAt for checking data staleness
-        var fetchedAtIndexSql = @"
-            CREATE INDEX IF NOT EXISTS IX_CompanyFinancials_FetchedAt
-            ON CompanyFinancials (FetchedAt)";
-        await db.ExecuteAsync(fetchedAtIndexSql);
-
         // ==================== StockData Indexes ====================
 
         // Create unique index on Symbol for StockData (one record per symbol)

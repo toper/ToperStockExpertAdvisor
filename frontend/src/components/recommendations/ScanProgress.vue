@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { format } from 'date-fns'
 import {
@@ -11,6 +11,11 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const store = useRecommendationsStore()
+
+// Fetch stats on component mount
+onMounted(() => {
+  store.fetchStats()
+})
 
 const scanStatusText = computed(() => {
   if (!store.scanInProgress && !store.scanCompletedAt) {
@@ -161,10 +166,10 @@ const recentUpdates = computed(() => {
       <div class="bg-white rounded-lg p-3 border border-gray-200">
         <div class="flex items-center gap-2 text-gray-500 text-xs mb-1">
           <ChartBarIcon class="h-4 w-4" />
-          Scan ID
+          Healthy Stocks
         </div>
         <div class="text-sm font-semibold text-gray-900">
-          #{{ store.scanLogId || '-' }}
+          {{ store.healthyStocksCount || '0' }} (F-Score ≥ 7)
         </div>
       </div>
     </div>

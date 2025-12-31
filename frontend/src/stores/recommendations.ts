@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { PutRecommendation } from '@/types'
-import { getRecommendations, getActiveRecommendations, getRecommendationsBySymbol } from '@/api/recommendations'
+import { getRecommendations, getActiveRecommendations, getRecommendationsBySymbol, getRecommendationsStats } from '@/api/recommendations'
 import { createScanProgressHub, type ScanProgressUpdate, type ScanStartedEvent, type ScanCompletedEvent } from '@/services/signalr'
 
 export const useRecommendationsStore = defineStore('recommendations', () => {
@@ -9,6 +9,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const totalCount = ref(0)
+  const healthyStocksCount = ref(0)
 
   // Scan progress state
   const scanInProgress = ref(false)
@@ -90,6 +91,15 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     }
   }
 
+  async function fetchStats() {
+    try {
+      const stats = await getRecommendationsStats()
+      healthyStocksCount.value = stats.healthyStocksCount
+    } catch (e) {
+      console.error('Failed to fetch stats:', e)
+    }
+  }
+
   function clearError() {
     error.value = null
   }
@@ -136,8 +146,9 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
       scanErrorMessage.value = event.errorMessage || 'Scan failed'
     }
 
-    // Refresh recommendations after scan completes
+    // Refresh recommendations and stats after scan completes
     fetchActiveRecommendations()
+    fetchStats()
   }
 
   // Start SignalR connection
@@ -197,6 +208,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     loading,
     error,
     totalCount,
+    healthyStocksCount,
     sortedRecommendations,
     highConfidenceCount,
 
@@ -217,6 +229,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     fetchRecommendations,
     fetchActiveRecommendations,
     fetchBySymbol,
+    fetchStats,
     clearError,
 
     // SignalR methods

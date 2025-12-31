@@ -20,19 +20,25 @@ public class FinancialHealthService : IFinancialHealthService
     private readonly ILogger<FinancialHealthService> _logger;
     private readonly ISimFinDataProvider _simFinProvider;
     private readonly IMarketDataProvider _marketDataProvider;
+    private readonly IStockDataRepository _stockDataRepository;
 
     // Minimum thresholds for healthy companies
     private const decimal MIN_PIOTROSKI_FSCORE = 7m; // 7-9 is strong
     private const decimal MIN_ALTMAN_ZSCORE = 1.81m; // Original Z-Score for public companies: Above distress zone (< 1.81 = distress, 1.81-2.99 = grey, > 2.99 = safe)
 
+    // Cache validity period (7 days)
+    private static readonly TimeSpan CACHE_VALIDITY = TimeSpan.FromDays(7);
+
     public FinancialHealthService(
         ILogger<FinancialHealthService> logger,
         ISimFinDataProvider simFinProvider,
-        IMarketDataProvider marketDataProvider)
+        IMarketDataProvider marketDataProvider,
+        IStockDataRepository stockDataRepository)
     {
         _logger = logger;
         _simFinProvider = simFinProvider;
         _marketDataProvider = marketDataProvider;
+        _stockDataRepository = stockDataRepository;
     }
 
     public async Task<FinancialHealthMetrics> CalculateMetricsAsync(
@@ -41,16 +47,34 @@ public class FinancialHealthService : IFinancialHealthService
     {
         try
         {
-            _logger.LogDebug("Calculating financial health metrics for {Symbol}", symbol);
+            // OPTIMIZATION: Check cache in StockData first (weekly bulk update)
+            var cachedData = await _stockDataRepository.GetBySymbolAsync(symbol, cancellationToken);
+            if (cachedData != null &&
+                cachedData.SimFinUpdatedAt.HasValue &&
+                (DateTime.UtcNow - cachedData.SimFinUpdatedAt.Value) < CACHE_VALIDITY &&
+                cachedData.PiotroskiFScore.HasValue &&
+                cachedData.AltmanZScore.HasValue)
+            {
+                _logger.LogDebug(
+                    "Using cached financial health for {Symbol} (age: {Age:F2} days, F-Score: {FScore}, Z-Score: {ZScore})",
+                    symbol,
+                    (DateTime.UtcNow - cachedData.SimFinUpdatedAt.Value).TotalDays,
+                    cachedData.PiotroskiFScore,
+                    cachedData.AltmanZScore);
 
-            // For now, use a simplified approach based on available data
-            // In production, you would fetch fundamental data from Yahoo Finance or another provider
-            // that provides balance sheet, income statement, and cash flow data
+                return new FinancialHealthMetrics
+                {
+                    PiotroskiFScore = cachedData.PiotroskiFScore,
+                    AltmanZScore = cachedData.AltmanZScore,
+                    ROA = cachedData.ROA,
+                    DebtToEquity = cachedData.DebtToEquity,
+                    CurrentRatio = cachedData.CurrentRatio,
+                    MarketCapBillions = cachedData.MarketCapBillions
+                };
+            }
 
-            // Yahoo Finance endpoints for fundamental data (requires parsing HTML or using unofficial API)
-            // For this implementation, we'll use a conservative approach:
-            // - Return null if we can't get reliable fundamental data
-            // - This ensures we only recommend stocks we can properly analyze
+            // Cache miss or stale - calculate from SimFin
+            _logger.LogDebug("Calculating financial health metrics for {Symbol} (cache miss or stale)", symbol);
 
             var fundamentals = await FetchFundamentalDataAsync(symbol, cancellationToken);
 

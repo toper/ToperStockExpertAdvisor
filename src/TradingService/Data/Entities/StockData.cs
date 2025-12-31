@@ -112,6 +112,23 @@ public class StockData
     [Column("SharesOutstanding")]
     public decimal? SharesOutstanding { get; set; }
 
+    // Additional financial metrics for F-Score and Z-Score calculations
+
+    [Column("RetainedEarnings")]
+    public decimal? RetainedEarnings { get; set; }
+
+    [Column("TotalDebt")]
+    public decimal? TotalDebt { get; set; }
+
+    [Column("EBITDA")]
+    public decimal? EBITDA { get; set; }
+
+    [Column("CurrentAssets")]
+    public decimal? CurrentAssets { get; set; }
+
+    [Column("CurrentLiabilities")]
+    public decimal? CurrentLiabilities { get; set; }
+
     // ==================== Yahoo Finance Data ====================
 
     /// <summary>

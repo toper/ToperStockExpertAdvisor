@@ -136,12 +136,14 @@ public class DailyScanService : IDailyScanService
 
             // Track recommendations per symbol (pick best one)
             var bestRecommendationsPerSymbol = new Dictionary<string, PutRecommendation>();
-            var symbolsProcessed = 0;
+            var symbolsProcessed = 0; // Count of symbols that passed health check and were analyzed
             var errors = new List<string>();
 
-            // Process each symbol
-            foreach (var symbol in symbols)
+            // Process each symbol - use for loop to track progress correctly
+            for (int i = 0; i < symbols.Count; i++)
             {
+                var symbol = symbols[i];
+
                 if (cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogInformation("Scan cancelled by user");
@@ -149,13 +151,13 @@ public class DailyScanService : IDailyScanService
                     break;
                 }
 
-                // Notify clients that we're scanning this symbol
+                // Notify clients that we're scanning this symbol (use i for correct progress)
                 if (_scanProgressNotifier != null)
                 {
                     await _scanProgressNotifier.NotifySymbolScanningAsync(new Models.ScanProgressUpdate
                     {
                         Symbol = symbol,
-                        CurrentIndex = symbolsProcessed,
+                        CurrentIndex = i, // Use loop index for accurate progress
                         TotalSymbols = symbols.Count,
                         Status = "Scanning"
                     });
@@ -165,7 +167,22 @@ public class DailyScanService : IDailyScanService
                 {
                     _logger.LogInformation("Processing symbol: {Symbol}", symbol);
 
-                    // Get aggregated market data
+                    // OPTIMIZATION: Check financial health FIRST (before expensive Exante API calls)
+                    var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
+
+                    // Skip symbols that don't meet health requirements (F-Score < 7, Z-Score < 1.81)
+                    if (!_financialHealthService.MeetsHealthRequirements(healthMetrics))
+                    {
+                        _logger.LogDebug(
+                            "Skipping {Symbol} - Does not meet financial health requirements. " +
+                            "F-Score: {FScore}, Z-Score: {ZScore}",
+                            symbol,
+                            healthMetrics.PiotroskiFScore?.ToString("F1") ?? "N/A",
+                            healthMetrics.AltmanZScore?.ToString("F2") ?? "N/A");
+                        continue; // Skip this symbol - don't fetch expensive options data!
+                    }
+
+                    // Symbol is healthy - fetch market data + options
                     var marketData = await _marketDataAggregator.GetFullMarketDataAsync(symbol);
 
                     if (marketData.MarketData == null)
@@ -174,9 +191,6 @@ public class DailyScanService : IDailyScanService
                         errors.Add($"{symbol}: No market data");
                         continue;
                     }
-
-                    // Calculate financial health ONCE per symbol (instead of 3x in each strategy)
-                    var healthMetrics = await _financialHealthService.CalculateMetricsAsync(symbol, cancellationToken);
 
                     // Add financial health to aggregated data
                     marketData = marketData with { FinancialHealthMetrics = healthMetrics };
@@ -221,7 +235,7 @@ public class DailyScanService : IDailyScanService
                         }
                     }
 
-                    symbolsProcessed++;
+                    symbolsProcessed++; // Count symbols that were actually analyzed
 
                     // Notify clients that symbol processing completed
                     if (_scanProgressNotifier != null)
@@ -229,7 +243,7 @@ public class DailyScanService : IDailyScanService
                         await _scanProgressNotifier.NotifySymbolCompletedAsync(new Models.ScanProgressUpdate
                         {
                             Symbol = symbol,
-                            CurrentIndex = symbolsProcessed,
+                            CurrentIndex = i, // Use loop index for accurate progress
                             TotalSymbols = symbols.Count,
                             Status = "Completed",
                             RecommendationsCount = bestRecommendationsPerSymbol.ContainsKey(symbol) ? 1 : 0
