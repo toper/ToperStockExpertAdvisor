@@ -109,12 +109,16 @@ public class RecommendationsController : BaseController
         {
             _logger.LogInformation("Getting recommendations statistics");
 
-            // Get healthy stocks count (F-Score >= 7)
+            // Get counts
+            var totalCount = await _stockDataRepository.GetTotalCountAsync();
             var healthyCount = await _stockDataRepository.GetHealthyCountAsync(7.0m);
+            var withOptionsCount = (await _stockDataRepository.GetWithOptionsDataAsync()).Count;
 
             var stats = new
             {
+                TotalRecords = totalCount,
                 HealthyStocksCount = healthyCount,
+                WithOptionsCount = withOptionsCount,
                 MinFScore = 7.0m
             };
 

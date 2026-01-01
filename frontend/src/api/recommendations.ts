@@ -7,7 +7,9 @@ export interface GetRecommendationsParams {
 }
 
 export interface RecommendationsStats {
+  totalRecords: number
   healthyStocksCount: number
+  withOptionsCount: number
   minFScore: number
 }
 

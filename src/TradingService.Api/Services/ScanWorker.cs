@@ -36,12 +36,7 @@ public class ScanWorker : BackgroundService
         _logger.LogInformation("Configured scan time: {ScanTime}", _settings.ScanTime);
         _logger.LogInformation("Watchlist: {Watchlist}", string.Join(", ", _settings.Watchlist));
 
-        // Execute first scan immediately on startup (only in development)
-        if (_environment.IsDevelopment() && _lastScanTime == null)
-        {
-            _logger.LogInformation("Executing IMMEDIATE first scan on startup (Development mode)...");
-            await ExecuteDailyScanAsync(stoppingToken);
-        }
+        // REMOVED: First scan on startup - only scheduled scans now
 
         while (!stoppingToken.IsCancellationRequested)
         {

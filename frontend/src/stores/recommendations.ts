@@ -9,6 +9,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const totalCount = ref(0)
+  const totalRecords = ref(0)
   const healthyStocksCount = ref(0)
 
   // Scan progress state
@@ -94,6 +95,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
   async function fetchStats() {
     try {
       const stats = await getRecommendationsStats()
+      totalRecords.value = stats.totalRecords
       healthyStocksCount.value = stats.healthyStocksCount
     } catch (e) {
       console.error('Failed to fetch stats:', e)
@@ -208,6 +210,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     loading,
     error,
     totalCount,
+    totalRecords,
     healthyStocksCount,
     sortedRecommendations,
     highConfidenceCount,

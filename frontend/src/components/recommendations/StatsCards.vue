@@ -3,9 +3,13 @@ import {
   DocumentChartBarIcon,
   ArrowTrendingUpIcon,
   ClockIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  CircleStackIcon
 } from '@heroicons/vue/24/outline'
 import type { PutRecommendation } from '@/types'
+import { useRecommendationsStore } from '@/stores/recommendations'
+
+const store = useRecommendationsStore()
 
 const props = defineProps<{
   recommendations: PutRecommendation[]
@@ -35,7 +39,7 @@ import { computed } from 'vue'
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div class="flex items-center">
         <div class="flex-shrink-0">
@@ -91,6 +95,21 @@ import { computed } from 'vue'
           <p class="text-2xl font-bold text-gray-900">
             <span v-if="loading" class="animate-pulse">...</span>
             <span v-else>{{ stats.highConfidence }}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center">
+        <div class="flex-shrink-0">
+          <CircleStackIcon class="h-8 w-8 text-blue-600" />
+        </div>
+        <div class="ml-4">
+          <p class="text-sm font-medium text-gray-500">Total Records</p>
+          <p class="text-2xl font-bold text-gray-900">
+            <span v-if="loading" class="animate-pulse">...</span>
+            <span v-else>{{ store.totalRecords }}</span>
           </p>
         </div>
       </div>
